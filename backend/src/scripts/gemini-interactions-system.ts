@@ -1,25 +1,67 @@
-import { Socket } from 'socket.io';
+import {Socket} from 'socket.io';
+import {GoogleGenAI, Modality, type Session} from "@google/genai"
+
+// constants
+const API_KEY = process.env.VERTEX_API_KEY || "";
+const LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+const HELPER_MODEL = "gemini-2.5-flash-lite";
+const AI = new GoogleGenAI({apiKey: API_KEY});
 
 // the analogy I like is we're giving Gemini a driver seat, and teaching it how to drive.
 // Gemini will obviously make mistakes driving the vehicle from time-to-time, so it's up to us
 // (the developers) to build a safe vehicle, potentially with some nice self driving.
 export class GeminiInteractionSystem {
+    private ready: boolean = false;
     private socket: Socket;
+    private session: Session | null = null;
     
     constructor(user_socket: Socket) {
         this.socket = user_socket;
 
+        AI.live.connect({
+            model: LIVE_MODEL,
+            callbacks: {
+                onopen: () => {
+
+                },
+                onclose: () => {
+
+                },
+                onmessage: (message) => {},
+                onerror: (error) => {
+                    console.error("Error connecting to Gemini Live API (non catch):\n", error);
+                }
+            },
+            config: {
+                responseModalities: [Modality.AUDIO]
+            }
+        }).then(session => {
+            this.session = session;
+            this.initialize_sockets();
+        }).catch(error => {
+            console.error("There was an error connecting to Gemini Live API:\n", error);
+        });
+    }
+
+    private initialize_sockets() {
         this.socket.on('video-frame', (data: string) => {
+            if (!this.ready) return;
             this.handle_video_frame(data);
         });
 
         this.socket.on("audio-chunk", (data: Float32Array) => {
+            if (!this.ready) return;
             this.handle_audio_chunk(data);
         });
 
         this.socket.on("disconnect", () => {
             console.log("Client disconnected, cleaning up Gemini interaction...");
         });
+    }
+
+    private shutdown_sockets() {
+        this.socket.removeAllListeners();
+        this.socket.disconnect();
     }
 
     private handle_video_frame(data: string) {
