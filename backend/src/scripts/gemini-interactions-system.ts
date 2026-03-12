@@ -11,7 +11,6 @@ const AI = new GoogleGenAI({apiKey: API_KEY});
 // Gemini will obviously make mistakes driving the vehicle from time-to-time, so it's up to us
 // (the developers) to build a safe vehicle, potentially with some nice self driving.
 export class GeminiInteractionSystem {
-    private ready: boolean = false;
     private socket: Socket;
     private session: Session | null = null;
     
@@ -22,14 +21,20 @@ export class GeminiInteractionSystem {
             model: LIVE_MODEL,
             callbacks: {
                 onopen: () => {
-
+                    console.log("A user has connected to the Gemini Live API!")
                 },
                 onclose: () => {
+                    this.session?.close();
+                    this.shutdown_sockets();
+                },
+                onmessage: (message) => {
+                    console.log("Message received from Gemini Live API:\n", message);
 
                 },
-                onmessage: (message) => {},
                 onerror: (error) => {
                     console.error("Error connecting to Gemini Live API (non catch):\n", error);
+                    this.session?.close();
+                    this.shutdown_sockets();
                 }
             },
             config: {
@@ -40,22 +45,23 @@ export class GeminiInteractionSystem {
             this.initialize_sockets();
         }).catch(error => {
             console.error("There was an error connecting to Gemini Live API:\n", error);
+            this.shutdown_sockets();
         });
     }
 
     private initialize_sockets() {
         this.socket.on('video-frame', (data: string) => {
-            if (!this.ready) return;
             this.handle_video_frame(data);
         });
 
         this.socket.on("audio-chunk", (data: Float32Array) => {
-            if (!this.ready) return;
             this.handle_audio_chunk(data);
         });
 
         this.socket.on("disconnect", () => {
-            console.log("Client disconnected, cleaning up Gemini interaction...");
+            console.log("Client disconnected");
+            this.shutdown_sockets();
+            this.session?.close();
         });
     }
 

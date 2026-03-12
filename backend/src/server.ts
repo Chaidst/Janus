@@ -23,7 +23,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    // note the gemini  driver seat handles the socket lifetime for a particular user
     new GeminiDriverSeat(socket);
 
     socket.on('disconnect', () => {
