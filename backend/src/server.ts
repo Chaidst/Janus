@@ -24,14 +24,7 @@ app.use(express.static(path.join(__dirname, '../../frontend')));
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
-
-    socket.on('video-frame', (data) => {
-        console.log('Received video frame from:', socket.id);
-    });
-
-    socket.on('audio-chunk', (data) => {
-        console.log('Received audio chunk from:', socket.id);
-    });
+    new GeminiDriverSeat(socket);
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
