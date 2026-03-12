@@ -1,4 +1,5 @@
 import IndicatorLight from './indicator.js';
+import Tools from './tools.js';
 
 const overlay = document.getElementById('overlay');
 const video = document.getElementById('videoElement');
@@ -30,11 +31,29 @@ overlay.addEventListener("click", async () => {
  */
 function main(stream) {
     const indicator = new IndicatorLight();
+    const tools = new Tools();
     const socket = new WebSocket(`ws://${window.location.host}/ws/stream/`);
 
     socket.onopen = () => {
         console.log("WebSocket connection established");
         indicator.setActive(true);
+
+        // Send window constraints
+        socket.send(JSON.stringify({
+            type: 'constraints',
+            width: window.innerWidth,
+            height: window.innerHeight
+        }));
+
+        window.addEventListener('resize', () => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'constraints',
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                }));
+            }
+        });
 
         const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
@@ -75,7 +94,18 @@ function main(stream) {
     };
 
     socket.onmessage = (event) => {
-        console.log("Message from server:", event.data);
+        try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'project') {
+                tools.project(payload);
+            } else if (payload.type === 'unproject') {
+                tools.unproject(payload);
+            } else {
+                console.log("Unknown message type:", payload.type);
+            }
+        } catch (err) {
+            console.error("Error parsing WebSocket message:", err, event.data);
+        }
     };
 
     socket.onerror = (error) => {

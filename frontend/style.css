@@ -30,3 +30,15 @@ body, html {
     font-size: 24px;
     z-index: 999;
 }
+
+.ar-projection {
+    pointer-events: auto;
+    min-width: 100px;
+    min-height: 100px;
+}
+
+/* Ensure A-Frame embedded scenes don't take over the whole screen unless desired */
+.ar-projection a-scene {
+    width: 300px;
+    height: 300px;
+}
