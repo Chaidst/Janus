@@ -3,3 +3,5 @@ channels
 daphne
 opencv-contrib-python
 numpy
+google-genai
+python-dotenv

@@ -121,6 +121,33 @@ class TrackerManager:
         return updates, to_remove
 
     def remove_tracker(self, pid):
-        """Removes a tracker and its data."""
-        self.trackers.pop(pid, None)
-        self.projection_data.pop(pid, None)
+        """Removes a tracker and its data, supporting fuzzy matching."""
+        if pid in self.trackers:
+            self.trackers.pop(pid)
+            self.projection_data.pop(pid)
+            return pid
+            
+        # Fuzzy match
+        for existing_id in list(self.trackers.keys()):
+            if self._is_similar(existing_id, pid):
+                self.trackers.pop(existing_id)
+                self.projection_data.pop(existing_id)
+                return existing_id
+        return None
+
+    def _is_similar(self, s1, s2):
+        """Simple fuzzy match for IDs."""
+        if not s1 or not s2: return False
+        s1, s2 = s1.lower(), s2.lower()
+        if s1 == s2: return True
+        
+        # Normalize
+        import re
+        norm1 = re.sub(r'[-_ ]', '', s1)
+        norm2 = re.sub(r'[-_ ]', '', s2)
+        if norm1 == norm2: return True
+        
+        if len(norm1) > 3 and len(norm2) > 3:
+            if norm1 in norm2 or norm2 in norm1:
+                return True
+        return False
