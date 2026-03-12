@@ -1,5 +1,0 @@
-django
-channels
-daphne
-opencv-contrib-python
-numpy
