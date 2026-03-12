@@ -1,3 +1,5 @@
+import { PROJECTION_CONFIG } from './constants.js';
+
 export default class Tools {
     constructor() {
         this.containerId = 'ar-container';
@@ -37,10 +39,23 @@ export default class Tools {
     }
 
     /**
+     * Updates an existing projection's position.
+     * @param {Object} payload 
+     */
+    updatePosition(payload) {
+        const { id, attach_point, relative_to } = payload;
+        const [x, y] = attach_point;
+        const projection = document.getElementById(`projection-${id}`);
+        if (projection) {
+            this.updateProjectionPosition(projection, x, y, relative_to);
+        }
+    }
+
+    /**
      * Updates the position of a projection element.
      */
     updateProjectionPosition(element, x, y, relativeTo) {
-        const offset = 20; // Some padding from the attach point
+        const offset = PROJECTION_CONFIG.OFFSET; // Some padding from the attach point
         
         element.style.left = `${x}px`;
         element.style.top = `${y}px`;
