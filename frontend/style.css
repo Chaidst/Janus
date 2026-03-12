@@ -7,14 +7,14 @@ body, html {
     background-color: black;
 }
 
-#videoElement {
+#video-playback {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: none;
 }
 
-#overlay {
+#overlay-button {
     position: fixed;
     top: 0;
     left: 0;

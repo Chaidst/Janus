@@ -1,45 +1,36 @@
-import IndicatorLight from './indicator.js';
-import Tools from './tools.js';
-import { SocketManager, MediaManager } from './managers.js';
+import { IndicatorLight } from "./utils.js"
+import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js"
 
-class App {
-    constructor() {
-        this.overlay = document.getElementById('overlay');
-        this.video = document.getElementById('videoElement');
-        this.canvas = document.getElementById('videoCanvas');
-        
-        this.indicator = new IndicatorLight();
-        this.tools = new Tools();
-        this.socketManager = new SocketManager(this.indicator, this.tools);
-        this.mediaManager = new MediaManager(this.video, this.canvas, this.socketManager);
+const overlay_button = document.querySelector("#overlay-button");
+const video_playback = document.querySelector("#video-playback");
 
-        this.init();
-    }
+const indicator = new IndicatorLight();
 
-    init() {
-        this.overlay.addEventListener("click", () => this.handleStart());
-    }
-
-    async handleStart() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true
-            });
-
-            this.overlay.style.display = "none";
-            this.socketManager.connect();
-            
-            // Wait for socket to be open before starting media
-            this.socketManager.addOnOpenCallback(() => {
-                this.mediaManager.start(stream);
-            });
-
-        } catch (err) {
-            alert(`Could not access camera or microphone. Please ensure permissions are granted.\nError:\n${err}`);
-        }
-    }
+function show_ui() {
+    overlay_button.style.display = "none";
+    video_playback.style.display = "block";
 }
 
-// Initialize the application
-new App();
+function handle_video_feed(data) {
+    console.log("Received video frame.");
+}
+
+function handle_audio_feed(data) {
+    console.log("Received audio chunk.");
+}
+
+function main() {
+    indicator.setStatus("pending");
+    // initialize webcam audio and video streams
+    const playback_streams = new WebcamAudioVideoStream(video_playback, {
+        onVideoFrame: handle_video_feed,
+        onAudioData: handle_audio_feed
+    });
+    playback_streams.start();
+    show_ui();
+
+}
+
+overlay_button.addEventListener("click", () => {
+    main();
+});

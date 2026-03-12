@@ -9,9 +9,8 @@
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 </head>
 <body>
-    <button id="overlay">Click to Activate Experience</button>
-    <video id="videoElement" autoplay playsinline muted></video>
-    <canvas id="videoCanvas" style="display: none;"></canvas>
+    <button id="overlay-button">Click to Activate Experience</button>
+    <video id="video-playback" autoplay playsinline muted></video>
     <div id="ar-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;"></div>
 
 <script type="module" src="{% static 'scripts/main.js' %}"></script>

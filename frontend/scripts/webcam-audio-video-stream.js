@@ -1,0 +1,140 @@
+class WebcamAudioVideoStream {
+    /**
+     * @param {HTMLVideoElement} videoElement
+     * @param {HTMLCanvasElement} canvasElement
+     * @param {Object} options
+     * @param {Function} options.onAudioData - Callback for audio chunks (Float32Array)
+     * @param {Function} options.onVideoFrame - Callback for video frames (base64 image data)
+     * @param {number} [options.fps=30] - Frames per second for video capture
+     * @param {number} [options.downscaleFactor=2] - Downscale factor for video frame capture
+     * @param {number} [options.quality=0.8] - JPEG quality (0.0 to 1.0)
+     */
+    constructor(videoElement, options = {}) {
+        this.video = videoElement;
+        this.canvas = document.createElement('canvas');
+        this.context = this.canvas.getContext('2d');
+        
+        this.onAudioData = options.onAudioData || (() => {});
+        this.onVideoFrame = options.onVideoFrame || (() => {});
+        this.fps = options.fps || 30;
+        this.downscaleFactor = options.downscaleFactor || 2;
+        this.quality = options.quality || 0.8;
+
+        this.stream = null;
+        this.audioContext = null;
+        this.videoInterval = null;
+    }
+
+    /**
+     * Start the webcam and audio stream
+     */
+    async start() {
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            });
+
+            this.video.srcObject = this.stream;
+            this.video.play();
+
+            await this.setupAudio();
+            this.setupVideo();
+
+            return this.stream;
+        } catch (err) {
+            console.error("Error accessing media devices:", err);
+            throw err;
+        }
+    }
+
+    /**
+     * Stop the webcam and audio stream
+     */
+    stop() {
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
+
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+
+        if (this.videoInterval) {
+            clearInterval(this.videoInterval);
+            this.videoInterval = null;
+        }
+
+        if (this.video) {
+            this.video.srcObject = null;
+        }
+    }
+
+    /**
+     * Internal: Set up audio processing using AudioWorklet
+     */
+    async setupAudio(callback = this.onAudioData) {
+        if (!this.stream) {
+            console.error("Cannot setup audio: stream is not initialized.");
+            return;
+        }
+        
+        if (this.audioContext) {
+            console.warn("AudioContext already exists. Re-using existing context.");
+            return;
+        }
+
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = this.audioContext.createMediaStreamSource(this.stream);
+
+        try {
+            // Note: Use a path relative to the current script or the base URL.
+            // Using a relative path that starts with './' is relative to the current URL.
+            // In Django with static files, this can be tricky.
+            // We'll try to find the script path or use the static path if we can.
+            const scriptPath = new URL('./audio-processor.js', import.meta.url).href;
+            await this.audioContext.audioWorklet.addModule(scriptPath);
+            const workletNode = new AudioWorkletNode(this.audioContext, 'audio-stream-processor');
+            
+            source.connect(workletNode);
+            workletNode.connect(this.audioContext.destination);
+
+            workletNode.port.onmessage = (event) => {
+                callback(event.data);
+            };
+        } catch (err) {
+            console.error("Error loading AudioWorklet:", err);
+            // Fallback or just log error
+        }
+    }
+
+    /**
+     * Internal: Set up video frame capturing
+     */
+    setupVideo(callback = this.onVideoFrame) {
+        if (this.videoInterval) {
+            console.warn("Video capture already running.");
+            return;
+        }
+
+        this.videoInterval = setInterval(() => {
+            if (this.video.videoWidth > 0) {
+                const width = this.video.videoWidth / this.downscaleFactor;
+                const height = this.video.videoHeight / this.downscaleFactor;
+                
+                if (this.canvas.width !== width || this.canvas.height !== height) {
+                    this.canvas.width = width;
+                    this.canvas.height = height;
+                }
+
+                this.context.drawImage(this.video, 0, 0, width, height);
+                const frameData = this.canvas.toDataURL('image/jpeg', this.quality);
+                callback(frameData);
+            }
+        }, 1000 / this.fps);
+    }
+}
+
+export { WebcamAudioVideoStream };
