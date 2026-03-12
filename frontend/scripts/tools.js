@@ -34,6 +34,16 @@ export default class Tools {
 
         projection.innerHTML = html;
         
+        // Ensure A-Frame works for dynamically added content
+        const scenes = projection.querySelectorAll('a-scene');
+        scenes.forEach(scene => {
+            if (!scene.hasLoaded) {
+                scene.addEventListener('loaded', () => {
+                    console.log('A-Frame scene loaded');
+                });
+            }
+        });
+        
         // Position based on attach_point and relative_to
         this.updateProjectionPosition(projection, x, y, relative_to);
     }

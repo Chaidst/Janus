@@ -20,6 +20,12 @@ class App {
         this.overlay.addEventListener("click", () => this.handleStart());
     }
 
+    async handleStartSignal() {
+        if (this.mediaManager.stream) {
+            await this.mediaManager.startStreaming();
+        }
+    }
+
     async handleStart() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -28,11 +34,16 @@ class App {
             });
 
             this.overlay.style.display = "none";
+            
+            // Setup media manager with stream but DON'T start streaming yet
+            this.mediaManager.setStream(stream);
+
             this.socketManager.connect();
             
-            // Wait for socket to be open before starting media
-            this.socketManager.addOnOpenCallback(() => {
-                this.mediaManager.start(stream);
+            // The socketManager will trigger mediaManager.startStreaming() 
+            // once it receives the 'ready' signal from the backend.
+            this.socketManager.addOnReadyCallback(() => {
+                this.handleStartSignal();
             });
 
         } catch (err) {

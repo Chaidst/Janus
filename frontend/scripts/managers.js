@@ -2,10 +2,12 @@ import { MSG_TYPE, VIDEO_CONFIG } from './constants.js';
 
 export class SocketManager {
     constructor(indicator, tools) {
+        console.log("SocketManager initialized with indicator:", indicator);
         this.indicator = indicator;
         this.tools = tools;
         this.socket = null;
         this.onOpenCallbacks = [];
+        this.onReadyCallbacks = [];
     }
 
     connect() {
@@ -19,7 +21,13 @@ export class SocketManager {
             this.onOpenCallbacks.forEach(cb => cb());
         };
 
-        this.socket.onmessage = (event) => this.handleMessage(event);
+        this.socket.onmessage = (event) => {
+            if (event.data instanceof Blob) {
+                this.handleAudioMessage(event.data);
+            } else {
+                this.handleMessage(event);
+            }
+        };
         this.socket.onerror = (error) => console.error("WebSocket error:", error);
         this.socket.onclose = () => {
             console.log("WebSocket connection closed");
@@ -31,6 +39,10 @@ export class SocketManager {
 
     addOnOpenCallback(cb) {
         this.onOpenCallbacks.push(cb);
+    }
+
+    addOnReadyCallback(cb) {
+        this.onReadyCallbacks.push(cb);
     }
 
     sendConstraints() {
@@ -51,10 +63,97 @@ export class SocketManager {
         }
     }
 
+    async handleAudioMessage(blob) {
+        if (!this.audioContext) {
+            // Native audio models like gemini-2.0-flash-exp output at 24kHz.
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        }
+        
+        try {
+            const arrayBuffer = await blob.arrayBuffer();
+            if (arrayBuffer.byteLength === 0) {
+                console.warn("Received empty audio buffer");
+                return;
+            }
+
+            console.log(`Processing ${arrayBuffer.byteLength} bytes of audio from Gemini`);
+
+            const int16Array = new Int16Array(arrayBuffer);
+            const float32Array = new Float32Array(int16Array.length);
+            
+            for (let i = 0; i < int16Array.length; i++) {
+                float32Array[i] = int16Array[i] / 32768.0;
+            }
+            
+            const audioBuffer = this.audioContext.createBuffer(1, float32Array.length, 24000);
+            audioBuffer.getChannelData(0).set(float32Array);
+            
+            const source = this.audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(this.audioContext.destination);
+            
+            // Handle overlapping audio chunks
+            const now = this.audioContext.currentTime;
+            if (!this.nextStartTime || this.nextStartTime < now) {
+                this.nextStartTime = now;
+            }
+            source.start(this.nextStartTime);
+            this.nextStartTime += audioBuffer.duration;
+            
+            this.audioSources = this.audioSources || [];
+            this.audioSources.push(source);
+            source.onended = () => {
+                this.audioSources = this.audioSources.filter(s => s !== source);
+            };
+        } catch (err) {
+            console.error("Error handling audio message:", err);
+        }
+    }
+
+    stopAudio() {
+        if (this.audioSources) {
+            this.audioSources.forEach(source => {
+                try { source.stop(); } catch (e) {}
+            });
+            this.audioSources = [];
+        }
+        this.nextStartTime = 0;
+    }
+
     handleMessage(event) {
+        if (event.data instanceof Blob) {
+            this.handleAudioMessage(event.data);
+            return;
+        }
+
         try {
             const payload = JSON.parse(event.data);
             switch (payload.type) {
+                case 'interrupted':
+                    this.stopAudio();
+                    break;
+                case 'status':
+                    console.log("Received status update:", payload);
+                    if (payload.status === 'connected') {
+                        if (typeof this.indicator.setConnected === 'function') {
+                            this.indicator.setConnected(true);
+                        } else {
+                            console.error("this.indicator.setConnected is not a function", this.indicator);
+                        }
+                    } else if (payload.status === 'ready') {
+                        if (typeof this.indicator.setReady === 'function') {
+                            this.indicator.setReady(true);
+                        } else {
+                            console.error("this.indicator.setReady is not a function", this.indicator);
+                        }
+                        this.onReadyCallbacks.forEach(cb => cb());
+                    } else if (payload.status === 'error') {
+                        console.error("Gemini Live reported an error:", payload.message);
+                        if (typeof this.indicator.setActive === 'function') {
+                            this.indicator.setActive(false); // Turn red
+                        }
+                    }
+                    break;
                 case MSG_TYPE.PROJECT:
                     this.tools.project(payload);
                     break;
@@ -82,30 +181,51 @@ export class MediaManager {
         this.context = canvasElement.getContext('2d');
         this.socketManager = socketManager;
         this.stream = null;
+        this.streamingInterval = null;
     }
 
-    async start(stream) {
+    setStream(stream) {
         this.stream = stream;
         this.video.srcObject = stream;
         this.video.style.display = "block";
+    }
 
+    async startStreaming() {
+        if (!this.stream) return;
         await this.setupAudio();
         this.setupVideo();
         this.setupProjectionRequest();
     }
 
+    async start(stream) {
+        this.setStream(stream);
+        await this.startStreaming();
+    }
+
     async setupAudio() {
-        const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(this.stream);
+        if (!this.stream.getAudioTracks().length) {
+            console.warn("No audio tracks found in stream");
+            return;
+        }
+        const audioContext = new AudioContext({ sampleRate: 16000 });
+        this.audioContext = audioContext; // Keep reference to prevent GC
+        const source = this.audioContextSource = audioContext.createMediaStreamSource(this.stream);
 
         try {
             await audioContext.audioWorklet.addModule('/static/scripts/audio-processor.js');
             const workletNode = new AudioWorkletNode(audioContext, 'audio-stream-processor');
             source.connect(workletNode);
-            workletNode.connect(audioContext.destination);
-
+            // Don't connect workletNode to destination to avoid echo of local mic
+            
             workletNode.port.onmessage = (event) => {
-                this.socketManager.send(event.data.buffer);
+                // event.data is Float32Array
+                const float32Data = event.data;
+                const int16Data = new Int16Array(float32Data.length);
+                for (let i = 0; i < float32Data.length; i++) {
+                    const s = Math.max(-1, Math.min(1, float32Data[i]));
+                    int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                this.socketManager.send(int16Data.buffer);
             };
         } catch (err) {
             console.error("Error loading AudioWorklet:", err);
@@ -113,7 +233,8 @@ export class MediaManager {
     }
 
     setupVideo() {
-        setInterval(() => {
+        if (this.streamingInterval) clearInterval(this.streamingInterval);
+        this.streamingInterval = setInterval(() => {
             if (this.video.videoWidth > 0) {
                 this.canvas.width = this.video.videoWidth / VIDEO_CONFIG.DOWNSCALE_FACTOR;
                 this.canvas.height = this.video.videoHeight / VIDEO_CONFIG.DOWNSCALE_FACTOR;

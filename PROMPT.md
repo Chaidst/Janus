@@ -150,17 +150,7 @@ child's experience with unnecessary augmented reality visuals.
 
 ---
 
-### 2. Authentication Flow
-Before accessing the main application, users must verify their identity.
-
-1.  **Prompt:** The user is presented with an interface to either log in or sign up.
-2.  **Credentials:** An account identity consists of a `username` and `password`.
-3.  **Verification:** The frontend submits these credentials to a Django authentication route to be checked against the SQLite database.
-4.  **Resolution:** If authentication passes, the user is granted access to the Gemini Live environment.
-
----
-
-### 3. Gemini Live Interface
+### 2. Gemini Live Interface
 Once authenticated, the user enters the main augmented reality (AR) interface.
 
 * **Visual Layout:** The interface features a full-page feed of the user's webcam. This ensures the user can clearly see
@@ -174,7 +164,7 @@ Once authenticated, the user enters the main augmented reality (AR) interface.
 
 ---
 
-### 4. Augmented Reality (AR) Tool Calls
+### 3. Augmented Reality (AR) Tool Calls
 During the session, the Gemini Live model will occasionally issue "tool calls" to the frontend. These commands instruct
 the client to overlay or remove augmented reality experiences within the user's field of view.
 
@@ -239,7 +229,7 @@ To ensure augmented reality visuals are properly scaled and positioned, the fron
 constraints to the backend, allowing Gemini Live to generate appropriately sized AR elements.
 
 
-### 5. Backend Architecture
+### 4. Backend Architecture
 The backend must be built using Django, though further architecture details are left up to you. Always follow best
 practices, make sure code is readable and blocks of logic are broken up into manageable methods. Make sure the backend
 uses the Google Gemini API to generate responses and handle audio input, as well as other capabilities necessary for
