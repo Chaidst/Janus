@@ -1,27 +1,26 @@
 import {Socket} from 'socket.io';
-import {GoogleGenAI, Modality, type Schema, type Session, Type} from "@google/genai"
+import {GoogleGenAI, Modality, type Schema, type Session, Type, StartSensitivity, EndSensitivity} from "@google/genai"
 
 // constants
-const LIVE_PROMPT = `You are an educational companion designed for children ages 2 to 6. Your primary interface is through a real-time audio and video feed, allowing you to see what the child sees and converse with them naturally. 
+const LIVE_PROMPT = `You are a warm, gentle, and encouraging learning companion for little ones aged 2 to 6. You interact through real-time audio and video, meaning you share their world, see what they see, and chat with them just like a supportive, friendly playmate. 
+### Your Heart and Boundaries
+* Be a gentle guide: Be an active, patient listener. Instead of just handing out answers, gently guide the child to discover things on their own, sparking their natural curiosity and wonder. 
+* Speak their language: Talk with the warmth, patience, and simplicity of a caring helper. Keep your words and tone easy for a toddler or preschooler to grasp.
+* Respect the parents' role: Remember, you are a companion, not a parent or guardian. Never step into a parental role, and leave discipline, safety interventions, and deep personal guidance to the real-life grown-ups in the room. 
+* Read the room: Pay close attention to their physical world and their feelings. Notice if a tower of blocks is getting wobbly, or if a child's face looks frustrated. 
+* Embrace quiet moments: Know when to just watch and smile. If the child is deeply focused on a puzzle, chatting with a sibling, or having a tough emotional moment, give them space. Do not interrupt; just be a quiet, supportive presence.
 
-# CORE PERSONA & BOUNDARIES
-- Act as an active listener and a gentle, encouraging guide. Prioritize nurturing curiosity and exploration over simply providing direct answers.
-- Speak in a natural, caregiver-style tone that is easy for a toddler or young child to understand. 
-- You are not a parent or guardian. Never assume a parental role, and never provide advice, discipline, or guidance that should exclusively come from a human caregiver.
-- Be highly observant of the child's physical environment, physical properties of objects (e.g., a leaning tower of blocks), and non-verbal cues.
-- Exercise discretion: Know when to speak and when to remain quietly observant. Do not interrupt if the child is deeply focused on a task, talking to someone else, arguing, or if an interaction would be distracting.
+### Seeing and Sharing Their World
+* Notice the little things: Use your "eyes" (the video feed) to truly see their environment. If they pick up a crunchy autumn leaf, feel a fuzzy blanket, or draw a squiggly blue line, use those details to start a fun conversation.
+* Ask playful questions: Spark dialogue based on what they are doing right in that moment. Try open-ended questions like, "Wow, how many blocks did you stack there?" or "Can you tell me a story about your wonderful drawing?"
+* Build a friendship: Remember what makes them unique. Keep track of their favorite colors, the names of their stuffed animals, and the topics they love, using these details to make your time together feel special and personalized over time.
 
-# VISUAL & CONTEXTUAL AWARENESS
-- Use your visual processing to identify objects, shapes, and textures in the child's environment to drive relevant, context-aware conversations (e.g., identifying a leaf, recognizing a drawing).
-- Ask open-ended questions based on what the child is actively doing (e.g., "How many blocks do you have there?" or "Can you tell me a story about your drawing?").
-- Actively maintain context. Note important details about the child (favorite colors, interests) to personalize the learning experience over time.
-
-# DIRECTIVES
-1. Observe continuously. 
-2. Speak only when it adds educational or emotional value.
-3. Use AR tools creatively to make abstract concepts visual and interactive.
-4. Clean up your AR visuals when they are no longer needed.
-5. Always keep the child's safety, focus, and developmental stage as your highest priority.`;
+### Your Guiding Principles
+1. Always be present: Watch and listen closely at all times.
+2. Add value, not noise: Chime in only when your words bring a smile, a comforting thought, or a fun learning moment.
+3. Bring ideas to life: Use your Augmented Reality (AR) tools like magic to make tricky or abstract ideas visual, playful, and interactive.
+4. Tidy up: Clear away your AR visuals and playful graphics when the activity is over so their view stays clean and focused. 
+5. Safety first: Above all else, let the child's safety, happiness, and current developmental stage guide every single thing you do.`;
 const HELPER_PROMPT = "";
 
 type ToolData = {
@@ -90,13 +89,13 @@ export class GeminiInteractionSystem {
                     const content = message.serverContent;
                     if (content?.modelTurn?.parts) {
                         for (const part of content.modelTurn.parts) {
-                            if (part.inlineData) {
-                                this.socket.emit('audio-out', part.inlineData.data);
+                            if (part.inlineData?.data) {
+                                const audioBuffer = Buffer.from(part.inlineData.data, 'base64');
+                                this.socket.emit('audio-out', audioBuffer);
                             }
                         }
                     }
                     if (content?.interrupted) {
-                        this.audioBuffer = new Int16Array(0);
                         this.socket.emit('interrupted');
                     }
                     if (content?.inputTranscription) {
@@ -117,8 +116,17 @@ export class GeminiInteractionSystem {
                 responseModalities: [Modality.AUDIO],
                 enableAffectiveDialog: true,
                 tools: this.tools?.get_tools_schema() || [],
-                // @ts-ignore - Enable transcription to see what Gemini hears
-                inputTranscriptionConfig: { enabled: true }
+                inputAudioTranscription: {},
+                outputAudioTranscription: {},
+                realtimeInputConfig: {
+                    automaticActivityDetection: {
+                        disabled: false,
+                        startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+                        endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+                        prefixPaddingMs: 20,
+                        silenceDurationMs: 100,
+                    }
+                }
             }
         }).then(session => {
             this.session = session;
@@ -134,7 +142,7 @@ export class GeminiInteractionSystem {
             this.handle_video_frame(data);
         });
 
-        this.socket.on("audio-chunk", (data: Float32Array) => {
+        this.socket.on("audio-chunk", (data: any) => {
             this.handle_audio_chunk(data);
         });
 
@@ -167,49 +175,30 @@ export class GeminiInteractionSystem {
     }
 
     private handle_audio_chunk(data: any) {
-        // Correctly handle incoming audio data from Socket.io (which delivers Buffer in Node)
-        let floatArray: Float32Array;
-        
+        let pcmData: Int16Array;
+
         if (Buffer.isBuffer(data)) {
-            try {
-                // If the buffer is not aligned to 4 bytes, we must copy it to a new ArrayBuffer
-                if (data.byteOffset % 4 !== 0) {
-                    const newBuf = new Uint8Array(data.byteLength);
-                    newBuf.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-                    floatArray = new Float32Array(newBuf.buffer);
-                } else {
-                    floatArray = new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4);
-                }
-            } catch (e) {
-                // Fallback: Copy the data manually if something goes wrong with memory alignment
-                const newBuf = new Uint8Array(data.byteLength);
-                newBuf.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-                floatArray = new Float32Array(newBuf.buffer);
+            // Socket.io in Node.js often delivers ArrayBuffer as Buffer.
+            // If the buffer is unaligned to 2 bytes, we must copy it to a new ArrayBuffer
+            // to avoid "RangeError: start offset of Int16Array should be a multiple of 2".
+            if (data.byteOffset % 2 !== 0) {
+                const aligned = new Uint8Array(data.byteLength);
+                aligned.set(data);
+                pcmData = new Int16Array(aligned.buffer, 0, data.byteLength >> 1);
+            } else {
+                pcmData = new Int16Array(data.buffer, data.byteOffset, data.byteLength >> 1);
             }
-        } else if (data instanceof Float32Array) {
-            floatArray = data;
         } else if (data instanceof ArrayBuffer) {
-            floatArray = new Float32Array(data);
-        } else if (Array.isArray(data)) {
-            floatArray = new Float32Array(data);
+            pcmData = new Int16Array(data);
+        } else if (data instanceof Int16Array) {
+            pcmData = data;
         } else {
-            // Fallback for objects with Numeric keys (sometimes happens with socket.io)
-            floatArray = new Float32Array(data);
+            pcmData = new Int16Array(data);
         }
 
-        const length = floatArray.length;
-        if (length === 0) return;
-
-        // Convert and scale to 16-bit PCM (Gemini expects little-endian)
-        const pcmData = new Int16Array(length);
-        for (let i = 0; i < length; i++) {
-            const val = floatArray[i] || 0;
-            const s = Math.max(-1, Math.min(1, val));
-            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
+        if (pcmData.length === 0) return;
 
         // Buffer audio to send larger chunks (e.g., ~100ms / 1600 samples)
-        // This is much more efficient than sending small chunks every 8ms.
         const newBuffer = new Int16Array(this.audioBuffer.length + pcmData.length);
         newBuffer.set(this.audioBuffer);
         newBuffer.set(pcmData, this.audioBuffer.length);
@@ -218,7 +207,7 @@ export class GeminiInteractionSystem {
         if (this.audioBuffer.length >= 1600) {
             const base64Audio = Buffer.from(this.audioBuffer.buffer, this.audioBuffer.byteOffset, this.audioBuffer.byteLength).toString('base64');
             this.session?.sendRealtimeInput({
-              audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
+                audio: { data: base64Audio, mimeType: 'audio/pcm;rate=16000' }
             });
             this.audioBuffer = new Int16Array(0);
         }
