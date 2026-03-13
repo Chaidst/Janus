@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node --env-file ../.env dist/server.js",
     "dev": "nodemon --loader ts-node/esm src/server.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

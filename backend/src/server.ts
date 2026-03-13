@@ -24,7 +24,7 @@ app.use(express.static(path.join(__dirname, '../../frontend')));
 
 io.on('connection', (socket) => {
     // note the gemini  driver seat handles the socket lifetime for a particular user
-    new GeminiDriverSeat(socket);
+    new GeminiDriverSeat(process.env.API_KEY || "", socket);
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
