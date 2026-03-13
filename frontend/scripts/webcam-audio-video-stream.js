@@ -92,10 +92,6 @@ class WebcamAudioVideoStream {
         const source = this.audioContext.createMediaStreamSource(this.stream);
 
         try {
-            // Note: Use a path relative to the current script or the base URL.
-            // Using a relative path that starts with './' is relative to the current URL.
-            // In Django with static files, this can be tricky.
-            // We'll try to find the script path or use the static path if we can.
             const scriptPath = new URL('./audio-processor.js', import.meta.url).href;
             await this.audioContext.audioWorklet.addModule(scriptPath);
             const workletNode = new AudioWorkletNode(this.audioContext, 'audio-stream-processor');
