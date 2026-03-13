@@ -74,7 +74,7 @@ export class GeminiInteractionSystem {
         this.AI = new GoogleGenAI({apiKey: api_key, httpOptions: {"apiVersion": "v1alpha"}});
         this.socket = user_socket;
         this.tools = new Tools(this.AI, user_socket);
-
+        this.initialize_tools();
         this.AI.live.connect({
             model: GeminiInteractionSystem.LIVE_MODEL,
             callbacks: {
@@ -103,6 +103,9 @@ export class GeminiInteractionSystem {
                     }
                     if (content?.outputTranscription) {
                         this.socket.emit('transcription', { type: 'model', text: content.outputTranscription.text });
+                    }
+                    if (message.toolCall) {
+                        console.log("Tools to call:", message.toolCall.functionCalls)
                     }
                 },
                 onerror: (error) => {
@@ -162,6 +165,15 @@ export class GeminiInteractionSystem {
         // this.tools.register(
         //     "add_memory",
         //     "Adds a memory to be remembered in later conversations.")
+        this.tools.register("add_memory", "adds a memory that can be recalled in the future",
+            {
+                "memory": {
+                    type: Type.STRING,
+                    description: "The memory to be remembered."
+                }
+            }, (memory: string) => {
+                console.log("add_memory called with memory:", memory);
+            })
     }
 
     private handle_video_frame(data: string) {
