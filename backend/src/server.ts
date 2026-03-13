@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
-import { GeminiInteractionSystem as GeminiDriverSeat } from './scripts/gemini-interactions-system.js';
+import { GeminiInteractionSystem } from './scripts/gemini-interactions-system.js';
 
 import { fileURLToPath } from 'url';
 
@@ -23,8 +23,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 io.on('connection', (socket) => {
-    // note the gemini  driver seat handles the socket lifetime for a particular user
-    new GeminiDriverSeat(process.env.API_KEY || "", socket);
+    // note the gemini driver seat handles the socket lifetime for a particular user
+    new GeminiInteractionSystem(process.env.API_KEY || "", socket);
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);

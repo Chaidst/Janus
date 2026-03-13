@@ -86,7 +86,9 @@ class WebcamAudioVideoStream {
             return;
         }
 
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 16000
+        });
         const source = this.audioContext.createMediaStreamSource(this.stream);
 
         try {
