@@ -6,7 +6,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    target: 'esnext'
+    target: 'esnext',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'frontend/index.html'),
+        parent: path.resolve(__dirname, 'frontend/parent.html')
+      }
+    }
   },
   server: {
     port: 5173,
@@ -14,6 +20,9 @@ export default defineConfig({
       '/socket.io': {
         target: 'http://localhost:3000',
         ws: true
+      },
+      '/api': {
+        target: 'http://localhost:3000'
       }
     }
   },
