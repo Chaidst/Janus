@@ -106,19 +106,26 @@ function show_ui() {
     if (overlay_button) overlay_button.style.display = "none";
     if (video_playback) video_playback.style.display = "block";
 }
-
-function handle_video_feed(data: string) {
+let ignore = false;
+let is_interpreting = false;
+async function handle_video_feed(data: string) {
     // console.log("Received video frame.");
+    if (ignore) return;
     socket.emit('video-frame', data);
 
     // Optional: Run local inference as well
-    /*
-    interpreter.interpret(data).then(result => {
+    if (is_interpreting) return;
+    is_interpreting = true;
+
+    try {
+        const result = await interpreter.interpret(data);
         if (result) {
-            console.log("Local Local AI Output:", result);
+            console.log("ignoring");
+            ignore = true;
         }
-    });
-    */
+    } finally {
+        is_interpreting = false;
+    }
 }
 
 function handle_audio_feed(data: ArrayBuffer) {
