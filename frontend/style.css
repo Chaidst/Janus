@@ -31,16 +31,228 @@ body, html {
     z-index: 999;
 }
 
-.ar-projection {
-    pointer-events: auto;
-    min-width: 100px;
-    min-height: 100px;
+#ar-container {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
 }
 
-/* Ensure A-Frame embedded scenes don't take over the whole screen unless desired */
-.ar-projection a-scene {
-    width: 300px;
-    height: 300px;
+.hidden {
+    display: none !important;
+}
+
+.activity-banner {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: min(520px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    padding: 14px 18px;
+    border-radius: 999px;
+    background: rgba(13, 18, 30, 0.78);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #f8fbff;
+    text-align: center;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.ar-focus-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(42vw, 320px);
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 4px solid rgba(255, 255, 255, 0.82);
+    box-shadow:
+        0 0 0 12px rgba(255, 255, 255, 0.08),
+        0 0 80px rgba(255, 255, 255, 0.18);
+    opacity: 0.92;
+}
+
+.ar-overlay-card {
+    position: absolute;
+    left: 24px;
+    bottom: 24px;
+    width: min(360px, calc(100vw - 32px));
+    padding: 18px;
+    border-radius: 24px;
+    background: rgba(9, 13, 24, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+    color: #ffffff;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+.ar-overlay-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.ar-overlay-title {
+    margin-top: 14px;
+    font-size: 28px;
+    line-height: 1.05;
+    font-weight: 800;
+}
+
+.ar-overlay-subtitle {
+    margin-top: 10px;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 15px;
+    line-height: 1.45;
+}
+
+.ar-overlay-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.ar-chip {
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.ar-overlay-prompt {
+    margin-top: 16px;
+    font-size: 16px;
+    line-height: 1.4;
+    color: #ffffff;
+}
+
+.generated-ar-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 220px;
+    height: 220px;
+    transform-origin: center bottom;
+    will-change: transform, left, top, width, height;
+}
+
+.generated-ar-shadow {
+    position: absolute;
+    left: 50%;
+    bottom: 8%;
+    width: 64%;
+    height: 16%;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(20, 18, 16, 0.34) 0%, rgba(20, 18, 16, 0.18) 45%, rgba(20, 18, 16, 0) 72%);
+    filter: blur(8px);
+}
+
+.generated-ar-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    animation: dino-bob 2.6s ease-in-out infinite;
+    filter: drop-shadow(0 18px 20px rgba(0, 0, 0, 0.24));
+}
+
+@keyframes dino-bob {
+    0% {
+        transform: translateY(0) rotate(-1deg);
+    }
+    50% {
+        transform: translateY(-8px) rotate(1.4deg);
+    }
+    100% {
+        transform: translateY(0) rotate(-1deg);
+    }
+}
+
+.celebration-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.celebration-burst {
+    position: absolute;
+    inset: 0;
+}
+
+.celebration-burst::before,
+.celebration-burst::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 10px solid rgba(255, 209, 102, 0.45);
+    animation: success-pulse 1.2s ease-out forwards;
+}
+
+.celebration-burst::after {
+    width: 240px;
+    height: 240px;
+    border-width: 6px;
+    animation-delay: 0.12s;
+}
+
+.celebration-star {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #ffd166;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    animation: sparkle-float 1.5s ease-out forwards;
+}
+
+@keyframes success-pulse {
+    0% {
+        opacity: 0.9;
+        transform: translate(-50%, -50%) scale(0.5);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.55);
+    }
+}
+
+@keyframes sparkle-float {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(0.4);
+    }
+    20% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(var(--tx), var(--ty), 0) scale(1.1) rotate(32deg);
+    }
 }
 
 /* ── Media Popup ──────────────────────────────────────────────────────────── */
@@ -100,5 +312,25 @@ body, html {
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
+    }
+}
+
+@media (max-width: 768px) {
+    .activity-banner {
+        top: 16px;
+        min-width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+        padding: 12px 14px;
+    }
+
+    .ar-overlay-card {
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+        width: auto;
+    }
+
+    .ar-overlay-title {
+        font-size: 24px;
     }
 }
