@@ -3,6 +3,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { GeminiInteractionSystem } from './scripts/gemini-interactions-system.js';
+import { setupParentChatRoutes } from './scripts/parent-chat.js';
 
 import { fileURLToPath } from 'url';
 
@@ -24,6 +25,12 @@ const publicPath = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(publicPath));
 // Fallback to serving the frontend folder for files not in dist (optional, for dev)
 app.use(express.static(path.join(__dirname, '../../frontend')));
+
+// Allow JSON body parsing
+app.use(express.json());
+
+// Setup parent API routes
+setupParentChatRoutes(app);
 
 io.on('connection', (socket) => {
     // note the gemini driver seat handles the socket lifetime for a particular user
