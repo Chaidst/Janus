@@ -2,22 +2,93 @@ import type { Express } from 'express';
 import { db } from './firebase.js';
 import { GoogleGenAI } from '@google/genai';
 
-const AI = new GoogleGenAI({apiKey: process.env.API_KEY || "", httpOptions: {"apiVersion": "v1alpha"}});
+const AI = new GoogleGenAI({ apiKey: process.env.API_KEY || "", httpOptions: { "apiVersion": "v1alpha" } });
+const SESSION_VOICE_NAME = 'Aoede';
+const SUMMARY_AUDIO_MODEL = 'gemini-2.5-flash-preview-tts';
+
+function getSessionsCollection() {
+    return db.collection('families').doc('default').collection('children').doc('default').collection('sessions');
+}
+
+function extractInlineAudio(response: Awaited<ReturnType<typeof AI.models.generateContent>>) {
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    const audioChunks: Buffer[] = [];
+    let mimeType: string | undefined;
+
+    for (const part of parts) {
+        if (!part.inlineData?.data) {
+            continue;
+        }
+
+        if (!mimeType) {
+            mimeType = part.inlineData.mimeType;
+        }
+
+        audioChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+    }
+
+    if (audioChunks.length === 0) {
+        return null;
+    }
+
+    return {
+        data: Buffer.concat(audioChunks),
+        mimeType,
+    };
+}
+
+function parseSampleRate(mimeType?: string) {
+    if (!mimeType) {
+        return 24000;
+    }
+
+    const rateMatch = mimeType.match(/rate=(\d+)/i) ?? mimeType.match(/sample[_-]?rate=(\d+)/i);
+    if (!rateMatch?.[1]) {
+        return 24000;
+    }
+
+    const sampleRate = Number.parseInt(rateMatch[1], 10);
+    return Number.isFinite(sampleRate) ? sampleRate : 24000;
+}
+
+function pcmToWav(audioBuffer: Buffer, sampleRate: number) {
+    const channelCount = 1;
+    const bitsPerSample = 16;
+    const blockAlign = channelCount * (bitsPerSample / 8);
+    const byteRate = sampleRate * blockAlign;
+    const header = Buffer.alloc(44);
+
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + audioBuffer.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(channelCount, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(audioBuffer.length, 40);
+
+    return Buffer.concat([header, audioBuffer]);
+}
 
 export function setupParentChatRoutes(app: Express) {
     // Get all sessions
     app.get('/api/sessions', async (req, res) => {
         try {
-            const sessionsSnapshot = await db.collection('families').doc('default').collection('children').doc('default').collection('sessions')
+            const sessionsSnapshot = await getSessionsCollection()
                 .orderBy('startedAt', 'desc')
                 .get();
-                
+
             const sessions = sessionsSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),
                 messages: undefined // Don't send full history in list view
             }));
-            
+
             res.json(sessions);
         } catch (error) {
             console.error('Error fetching sessions:', error);
@@ -28,13 +99,13 @@ export function setupParentChatRoutes(app: Express) {
     // Get specific session details
     app.get('/api/sessions/:id', async (req, res) => {
         try {
-            const sessionDoc = await db.collection('families').doc('default').collection('children').doc('default').collection('sessions').doc(req.params.id).get();
-            
+            const sessionDoc = await getSessionsCollection().doc(req.params.id).get();
+
             if (!sessionDoc.exists) {
                 res.status(404).json({ error: 'Session not found' });
                 return;
             }
-            
+
             res.json({
                 id: sessionDoc.id,
                 ...sessionDoc.data()
@@ -45,10 +116,61 @@ export function setupParentChatRoutes(app: Express) {
         }
     });
 
+    app.get('/api/sessions/:id/audio', async (req, res) => {
+        try {
+            const sessionDoc = await getSessionsCollection().doc(req.params.id).get();
+
+            if (!sessionDoc.exists) {
+                res.status(404).json({ error: 'Session not found' });
+                return;
+            }
+
+            const sessionData = sessionDoc.data();
+            const summary = typeof sessionData?.summary === 'string' ? sessionData.summary.trim() : '';
+
+            if (!summary) {
+                res.status(400).json({ error: 'Session summary is not available' });
+                return;
+            }
+
+            const response = await AI.models.generateContent({
+                model: SUMMARY_AUDIO_MODEL,
+                contents: `Read this session summary exactly as written in a warm, natural voice for a parent.\n\n${summary}`,
+                config: {
+                    responseModalities: ['AUDIO'],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: SESSION_VOICE_NAME,
+                            },
+                        },
+                    },
+                },
+            });
+
+            const generatedAudio = extractInlineAudio(response);
+            if (!generatedAudio) {
+                throw new Error('Gemini did not return audio data.');
+            }
+
+            const mimeType = generatedAudio.mimeType?.toLowerCase();
+            const wavBuffer = mimeType?.includes('wav')
+                ? generatedAudio.data
+                : pcmToWav(generatedAudio.data, parseSampleRate(generatedAudio.mimeType));
+
+            res.setHeader('Content-Type', 'audio/wav');
+            res.setHeader('Cache-Control', 'no-store');
+            res.send(wavBuffer);
+        } catch (error) {
+            console.error('Error generating session audio:', error);
+            res.status(500).json({ error: 'Failed to generate session audio' });
+        }
+    });
+
     // Parent chat
     app.post('/api/parent/chat', async (req, res) => {
         const { message, conversationHistory } = req.body;
-        
+
         if (!message) {
             res.status(400).json({ error: 'Message is required' });
             return;
@@ -56,11 +178,11 @@ export function setupParentChatRoutes(app: Express) {
 
         try {
             // Fetch the last 5 sessions to provide context
-            const sessionsSnapshot = await db.collection('families').doc('default').collection('children').doc('default').collection('sessions')
+            const sessionsSnapshot = await getSessionsCollection()
                 .orderBy('startedAt', 'desc')
                 .limit(5)
                 .get();
-                
+
             let contextText = "Here are the recent conversations between the child and their AI companion:\n\n";
             sessionsSnapshot.forEach(doc => {
                 const data = doc.data();
@@ -99,7 +221,7 @@ ${contextText}`;
 
             // Instead of manually reconstructing history, let's just make sure we send the latest message
             // Wait, setting up history via config or simple content array is better. Let's make it simpler:
-            
+
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
@@ -110,7 +232,7 @@ ${contextText}`;
                     parts: [{ text: msg.text }]
                 };
             });
-            
+
             // Add the new message
             history.push({ role: 'user', parts: [{ text: message }] });
 
@@ -127,7 +249,7 @@ ${contextText}`;
                     res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
                 }
             }
-            
+
             res.write('data: [DONE]\n\n');
             res.end();
 
