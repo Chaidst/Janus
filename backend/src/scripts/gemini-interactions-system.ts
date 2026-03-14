@@ -282,7 +282,7 @@ export class GeminiInteractionSystem {
     private static readonly VIDEO_SENT_RATE = 1000;
     private static readonly AUDIO_SENT_RATE = 40;
 
-    private static readonly AUDIO_VIDEO_HISTORY_DURATION_MS = 5000;
+    private static readonly AUDIO_VIDEO_HISTORY_DURATION_MS = 15000;
     private static readonly AUDIO_SAMPLE_RATE = 16000;
     private static readonly MAX_AUDIO_HISTORY_SIZE = (GeminiInteractionSystem.AUDIO_VIDEO_HISTORY_DURATION_MS / 1000) * GeminiInteractionSystem.AUDIO_SAMPLE_RATE;
     private static readonly VIDEO_FPS = 1;
@@ -962,14 +962,6 @@ ${transcript}`
             });
         }
 
-        // periodically analyze video history for interesting moments
-        if (currentTime - this.feedbackTracking.geminiLastSpoke > GeminiInteractionSystem.AUDIO_VIDEO_HISTORY_DURATION_MS) {
-            console.log("sending audio video history to gemini");
-            this.feedbackTracking.geminiLastSpoke = currentTime;
-            this.getVideoHistoryAsBase64().then(base64Video => {
-                this.helper.askTrueFalseQuestion("is this video interesting?", { data: base64Video, mimeType: 'video/mp4' });
-            });
-        }
     }
 
     private handleAudioChunk(data: any) {
