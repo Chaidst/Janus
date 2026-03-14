@@ -34,6 +34,7 @@ db.sqlite3-journal
 # Environment variables
 .env
 .env.local
+service-account.json
 
 # IDE
 .vscode/
