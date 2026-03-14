@@ -65,6 +65,7 @@ class Tools {
 // (the developers) to build a safe vehicle, potentially with some nice self driving.
 export class GeminiInteractionSystem {
     private static readonly LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+    private static readonly LIVE_VOICE_NAME = "Aoede";
     private AI: GoogleGenAI;
     private socket: Socket;
     private session: Session | null = null;
@@ -141,6 +142,13 @@ export class GeminiInteractionSystem {
             config: {
                 systemInstruction: { parts: [{ text: LIVE_PROMPT }] },
                 responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: {
+                            voiceName: GeminiInteractionSystem.LIVE_VOICE_NAME,
+                        },
+                    },
+                },
                 enableAffectiveDialog: true,
                 tools: this.tools?.get_tools_schema() || [],
                 inputAudioTranscription: {},
