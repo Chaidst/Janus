@@ -1,5 +1,6 @@
 import {Socket} from 'socket.io';
 import {GoogleGenAI, Modality, type Schema, type Session, Type, StartSensitivity, EndSensitivity} from "@google/genai"
+import {MediaSearchService} from './media-search-service.js'
 
 // constants
 const LIVE_PROMPT = `You are a warm, gentle, and encouraging learning companion for little ones aged 2 to 6. You interact through real-time audio and video, meaning you share their world, see what they see, and chat with them just like a supportive, friendly playmate. 
@@ -67,6 +68,7 @@ export class GeminiInteractionSystem {
     private socket: Socket;
     private session: Session | null = null;
     private tools: Tools;
+    private mediaSearch: MediaSearchService;
     private audioBuffer: Int16Array = new Int16Array(0);
 
     
@@ -74,6 +76,7 @@ export class GeminiInteractionSystem {
         this.AI = new GoogleGenAI({apiKey: api_key, httpOptions: {"apiVersion": "v1alpha"}});
         this.socket = user_socket;
         this.tools = new Tools(this.AI, user_socket);
+        this.mediaSearch = new MediaSearchService();
         this.initialize_tools();
         this.AI.live.connect({
             model: GeminiInteractionSystem.LIVE_MODEL,
@@ -105,7 +108,8 @@ export class GeminiInteractionSystem {
                         this.socket.emit('transcription', { type: 'model', text: content.outputTranscription.text });
                     }
                     if (message.toolCall) {
-                        console.log("Tools to call:", message.toolCall.functionCalls)
+                        console.log("Tools to call:", message.toolCall.functionCalls);
+                        this.handle_tool_calls(message.toolCall.functionCalls || []);
                     }
                 },
                 onerror: (error) => {
@@ -162,9 +166,6 @@ export class GeminiInteractionSystem {
     }
 
     private initialize_tools() {
-        // this.tools.register(
-        //     "add_memory",
-        //     "Adds a memory to be remembered in later conversations.")
         this.tools.register("add_memory", "adds a memory that can be recalled in the future",
             {
                 "memory": {
@@ -174,6 +175,100 @@ export class GeminiInteractionSystem {
             }, (memory: string) => {
                 console.log("add_memory called with memory:", memory);
             })
+
+        this.tools.register("show_visual",
+            "Shows the child an image or video when they ask about or mention something visual, like a place, animal, object, or concept. Use this to bring their curiosity to life with a picture or a short video.",
+            {
+                "query": {
+                    type: Type.STRING,
+                    description: "A short search query for the visual, e.g. 'Eiffel Tower', 'dinosaur', 'solar system'"
+                },
+                "type": {
+                    type: Type.STRING,
+                    description: "The type of media to show: 'image' or 'video'"
+                }
+            },
+            async (args: { query: string, type: string }) => {
+                console.log(`show_visual called: query="${args.query}", type="${args.type}"`);
+                await this.fetch_and_emit_media(args.query, args.type);
+            }
+        );
+    }
+
+    /**
+     * Fetches media from Google APIs and emits the result to the frontend.
+     */
+    private async fetch_and_emit_media(query: string, type: string) {
+        try {
+            if (type === 'video') {
+                const result = await this.mediaSearch.searchVideo(query);
+                if (result) {
+                    this.socket.emit('show-media', {
+                        type: 'video',
+                        videoId: result.videoId,
+                        title: result.title,
+                        thumbnail: result.thumbnail,
+                    });
+                    console.log(`Sent video to client: ${result.title}`);
+                }
+            } else {
+                const result = await this.mediaSearch.searchImage(query);
+                if (result) {
+                    this.socket.emit('show-media', {
+                        type: 'image',
+                        url: result.url,
+                        title: result.title,
+                        source: result.source,
+                    });
+                    console.log(`Sent image to client: ${result.title}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching media:', error);
+        }
+    }
+
+    /**
+     * Executes tool calls received from Gemini and sends responses back to the session.
+     */
+    private async handle_tool_calls(functionCalls: any[]) {
+        if (!functionCalls || !this.session) return;
+
+        const responses = [];
+        for (const call of functionCalls) {
+            const toolName = call.name;
+            const toolArgs = call.args;
+            const toolData = (this.tools as any).tools[toolName];
+
+            if (toolData) {
+                try {
+                    await toolData.handler(toolArgs);
+                    responses.push({
+                        id: call.id,
+                        name: toolName,
+                        response: { success: true },
+                    });
+                } catch (error) {
+                    console.error(`Error executing tool ${toolName}:`, error);
+                    responses.push({
+                        id: call.id,
+                        name: toolName,
+                        response: { success: false, error: String(error) },
+                    });
+                }
+            }
+        }
+
+        // Send tool responses back to Gemini so it can continue the conversation
+        if (responses.length > 0) {
+            try {
+                await this.session.sendToolResponse({
+                    functionResponses: responses,
+                });
+            } catch (error) {
+                console.error('Error sending tool response:', error);
+            }
+        }
     }
 
     private handle_video_frame(data: string) {
