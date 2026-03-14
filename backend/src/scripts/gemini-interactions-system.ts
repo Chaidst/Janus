@@ -203,22 +203,28 @@ export class GeminiInteractionSystem {
             if (type === 'video') {
                 const result = await this.mediaSearch.searchVideo(query);
                 if (result) {
-                    this.socket.emit('show-media', {
-                        type: 'video',
-                        videoId: result.videoId,
-                        title: result.title,
-                        thumbnail: result.thumbnail,
+                    this.socket.emit('tool-call', {
+                        name: 'show_visual',
+                        args: {
+                            type: 'video',
+                            videoId: result.videoId,
+                            title: result.title,
+                            thumbnail: result.thumbnail,
+                        }
                     });
                     console.log(`Sent video to client: ${result.title}`);
                 }
             } else {
                 const result = await this.mediaSearch.searchImage(query);
                 if (result) {
-                    this.socket.emit('show-media', {
-                        type: 'image',
-                        url: result.url,
-                        title: result.title,
-                        source: result.source,
+                    this.socket.emit('tool-call', {
+                        name: 'show_visual',
+                        args: {
+                            type: 'image',
+                            url: result.url,
+                            title: result.title,
+                            source: result.source,
+                        }
                     });
                     console.log(`Sent image to client: ${result.title}`);
                 }
