@@ -11,7 +11,22 @@
 <body>
     <button id="overlay-button">Click to Activate Experience</button>
     <video id="video-playback" autoplay playsinline muted></video>
-    <div id="ar-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;"></div>
+    <div id="ar-container">
+        <div id="activity-banner" class="activity-banner hidden"></div>
+        <div id="ar-focus-ring" class="ar-focus-ring hidden"></div>
+        <div id="ar-overlay-card" class="ar-overlay-card hidden">
+            <div id="ar-overlay-badge" class="ar-overlay-badge"></div>
+            <div id="ar-overlay-title" class="ar-overlay-title"></div>
+            <div id="ar-overlay-subtitle" class="ar-overlay-subtitle"></div>
+            <div id="ar-overlay-items" class="ar-overlay-items"></div>
+            <div id="ar-overlay-prompt" class="ar-overlay-prompt"></div>
+        </div>
+        <div id="generated-ar-stage" class="generated-ar-stage hidden">
+            <div id="generated-ar-shadow" class="generated-ar-shadow"></div>
+            <img id="generated-ar-image" class="generated-ar-image" alt="" />
+        </div>
+        <div id="celebration-layer" class="celebration-layer hidden"></div>
+    </div>
 
 <script type="module" src="scripts/main.ts"></script>
 </body>
