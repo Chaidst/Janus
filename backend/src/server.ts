@@ -23,7 +23,17 @@ const PORT = process.env.PORT || 3000;
 
 const publicPath = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(publicPath));
+
+
 // Fallback to serving the frontend folder for files not in dist (optional, for dev)
+if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+        if (req.path.endsWith('.ts')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+        next();
+    });
+}
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 // Allow JSON body parsing
@@ -34,7 +44,13 @@ setupParentChatRoutes(app);
 
 io.on('connection', (socket) => {
     // note the gemini driver seat handles the socket lifetime for a particular user
-    new GeminiInteractionSystem(process.env.API_KEY || "", socket);
+    if (process.env.USE_VERTEX) {
+        console.log("Using Vertex AI");
+        new GeminiInteractionSystem(process.env.API_KEY || "", socket, "vertex");
+    } else {
+        console.log("Using AI Studio");
+        new GeminiInteractionSystem(process.env.API_KEY || "", socket);
+    }
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
