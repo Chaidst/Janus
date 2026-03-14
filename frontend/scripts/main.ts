@@ -102,40 +102,43 @@ socket.on('transcription', (data: { type: string, text: string }) => {
     console.log(`[${data.type}] ${data.text}`);
 });
 
-// ── Media Popup Handler ──────────────────────────────────────────────────────
-socket.on('show-media', (data: { type: string; url?: string; videoId?: string; title: string }) => {
-    // Remove any existing popup first
-    const existing = document.querySelector('.media-popup');
-    if (existing) existing.remove();
+// ── Tool Call Handler ────────────────────────────────────────────────────────
+socket.on('tool-call', (data: { name: string; args: any }) => {
+    if (data.name === 'show_visual') {
+        const args = data.args;
+        // Remove any existing popup first
+        const existing = document.querySelector('.media-popup');
+        if (existing) existing.remove();
 
-    const popup = document.createElement('div');
-    popup.className = 'media-popup';
+        const popup = document.createElement('div');
+        popup.className = 'media-popup';
 
-    if (data.type === 'video' && data.videoId) {
-        const iframe = document.createElement('iframe');
-        iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1`;
-        iframe.allow = 'autoplay; encrypted-media';
-        iframe.allowFullscreen = true;
-        popup.appendChild(iframe);
-    } else if (data.url) {
-        const img = document.createElement('img');
-        img.src = data.url;
-        img.alt = data.title;
-        popup.appendChild(img);
+        if (args.type === 'video' && args.videoId) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://www.youtube.com/embed/${args.videoId}?autoplay=1&mute=1`;
+            iframe.allow = 'autoplay; encrypted-media';
+            iframe.allowFullscreen = true;
+            popup.appendChild(iframe);
+        } else if (args.url) {
+            const img = document.createElement('img');
+            img.src = args.url;
+            img.alt = args.title;
+            popup.appendChild(img);
+        }
+
+        const title = document.createElement('div');
+        title.className = 'media-popup-title';
+        title.textContent = args.title;
+        popup.appendChild(title);
+
+        document.body.appendChild(popup);
+
+        // Auto-dismiss after 10 seconds
+        setTimeout(() => {
+            popup.classList.add('dismissing');
+            setTimeout(() => popup.remove(), 500);
+        }, 10000);
     }
-
-    const title = document.createElement('div');
-    title.className = 'media-popup-title';
-    title.textContent = data.title;
-    popup.appendChild(title);
-
-    document.body.appendChild(popup);
-
-    // Auto-dismiss after 10 seconds
-    setTimeout(() => {
-        popup.classList.add('dismissing');
-        setTimeout(() => popup.remove(), 500);
-    }, 10000);
 });
 
 function show_ui() {
