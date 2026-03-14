@@ -1,12 +1,16 @@
 {
-  "name": "backend",
+  "name": "janus",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/server.js",
+  "main": "backend/dist/server.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node --env-file ../.env dist/server.js",
-    "dev": "nodemon --loader ts-node/esm src/server.ts",
+    "build:backend": "tsc -p backend/tsconfig.json",
+    "build:frontend": "vite build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "start": "node --env-file .env backend/dist/server.js",
+    "dev:backend": "nodemon --loader ts-node/esm backend/src/server.ts",
+    "dev:frontend": "vite",
+    "dev": "npm run dev:backend & npm run dev:frontend",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,6 +19,7 @@
   "type": "module",
   "dependencies": {
     "@google/genai": "^1.44.0",
+    "@huggingface/transformers": "^3.8.1",
     "express": "^5.2.1",
     "socket.io": "^4.8.3",
     "sqlite": "^5.1.1",
@@ -26,6 +31,7 @@
     "@types/sqlite3": "^3.1.11",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
   }
 }

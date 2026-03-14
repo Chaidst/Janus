@@ -20,6 +20,9 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+const publicPath = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(publicPath));
+// Fallback to serving the frontend folder for files not in dist (optional, for dev)
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 io.on('connection', (socket) => {

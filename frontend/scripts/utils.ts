@@ -1,6 +1,7 @@
 class IndicatorLight {
-    // this reminds me of the meme "What Is My Purpose?"
-    status = false;
+    private indicator: HTMLDivElement;
+    public status: "inactive" | "pending" | "active" = "inactive";
+
     constructor() {
         this.indicator = document.createElement("div");
         this.indicator.style.position = "fixed";
@@ -14,10 +15,7 @@ class IndicatorLight {
         this.setStatus("inactive");
     }
 
-    /**
-     * @param {"inactive"|"pending"|"active"} status
-     */
-    setStatus(status) {
+    setStatus(status: "inactive" | "pending" | "active") {
         this.status = status;
         if (status === "inactive") {
             this.indicator.style.backgroundColor = "#ff1000";

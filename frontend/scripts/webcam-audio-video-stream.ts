@@ -1,7 +1,20 @@
+import audioProcessorUrl from './audio-processor.ts?worker&url';
+
 class WebcamAudioVideoStream {
+    private video: HTMLVideoElement;
+    private canvas: HTMLCanvasElement;
+    private context: CanvasRenderingContext2D;
+    private onAudioData: (data: ArrayBuffer) => void;
+    private onVideoFrame: (frame: string) => void;
+    private fps: number;
+    private downscaleFactor: number;
+    private quality: number;
+    private stream: MediaStream | null = null;
+    private audioContext: AudioContext | null = null;
+    private videoInterval: any = null;
+
     /**
      * @param {HTMLVideoElement} videoElement
-     * @param {HTMLCanvasElement} canvasElement
      * @param {Object} options
      * @param {Function} options.onAudioData - Callback for audio chunks (Float32Array)
      * @param {Function} options.onVideoFrame - Callback for video frames (base64 image data)
@@ -9,26 +22,32 @@ class WebcamAudioVideoStream {
      * @param {number} [options.downscaleFactor=2] - Downscale factor for video frame capture
      * @param {number} [options.quality=0.8] - JPEG quality (0.0 to 1.0)
      */
-    constructor(videoElement, options = {}) {
+    constructor(videoElement: HTMLVideoElement, options: {
+        onAudioData?: (data: ArrayBuffer) => void;
+        onVideoFrame?: (frame: string) => void;
+        fps?: number;
+        downscaleFactor?: number;
+        quality?: number;
+    } = {}) {
         this.video = videoElement;
         this.canvas = document.createElement('canvas');
-        this.context = this.canvas.getContext('2d');
+        const context = this.canvas.getContext('2d');
+        if (!context) {
+            throw new Error("Could not get 2D context");
+        }
+        this.context = context;
         
         this.onAudioData = options.onAudioData || (() => {});
         this.onVideoFrame = options.onVideoFrame || (() => {});
         this.fps = options.fps || 30;
         this.downscaleFactor = options.downscaleFactor || 2;
         this.quality = options.quality || 0.8;
-
-        this.stream = null;
-        this.audioContext = null;
-        this.videoInterval = null;
     }
 
     /**
      * Start the webcam and audio stream
      */
-    async start() {
+    async start(): Promise<MediaStream> {
         try {
             this.stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
@@ -75,7 +94,7 @@ class WebcamAudioVideoStream {
     /**
      * Internal: Set up audio processing using AudioWorklet
      */
-    async setupAudio(callback = this.onAudioData) {
+    async setupAudio(callback: (data: ArrayBuffer) => void = this.onAudioData) {
         if (!this.stream) {
             console.error("Cannot setup audio: stream is not initialized.");
             return;
@@ -86,14 +105,13 @@ class WebcamAudioVideoStream {
             return;
         }
 
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
             sampleRate: 16000
         });
         const source = this.audioContext.createMediaStreamSource(this.stream);
 
         try {
-            const scriptPath = new URL('./audio-processor.js', import.meta.url).href;
-            await this.audioContext.audioWorklet.addModule(scriptPath);
+            await this.audioContext.audioWorklet.addModule(audioProcessorUrl);
             const workletNode = new AudioWorkletNode(this.audioContext, 'audio-stream-processor');
             
             source.connect(workletNode);
@@ -111,7 +129,7 @@ class WebcamAudioVideoStream {
     /**
      * Internal: Set up video frame capturing
      */
-    setupVideo(callback = this.onVideoFrame) {
+    setupVideo(callback: (frame: string) => void = this.onVideoFrame) {
         if (this.videoInterval) {
             console.warn("Video capture already running.");
             return;

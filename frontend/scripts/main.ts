@@ -1,18 +1,26 @@
 import { IndicatorLight } from "./utils.js"
 import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js"
+import { SceneInterpreter } from "./scene-interpreter.js"
 
-const overlay_button = document.querySelector("#overlay-button");
-const video_playback = document.querySelector("#video-playback");
+declare var io: any;
+
+const overlay_button = document.querySelector<HTMLButtonElement>("#overlay-button");
+const video_playback = document.querySelector<HTMLVideoElement>("#video-playback");
+
+if (!overlay_button || !video_playback) {
+    throw new Error("Required DOM elements not found");
+}
 
 const indicator = new IndicatorLight();
 const socket = io();
+const interpreter = new SceneInterpreter(); // Local AI model initialization
 
 // Handle audio playback from Gemini
-let audioQueue = [];
+let audioQueue: ArrayBuffer[] = [];
 let isPlaying = false;
-let audioContext = null;
+let audioContext: AudioContext | null = null;
 let nextStartTime = 0;
-let activeSources = [];
+let activeSources: AudioBufferSourceNode[] = [];
 
 async function playNextAudio() {
     if (audioQueue.length === 0) {
@@ -22,10 +30,11 @@ async function playNextAudio() {
 
     isPlaying = true;
     const arrayBuffer = audioQueue.shift();
+    if (!arrayBuffer) return;
     const pcmData = new Int16Array(arrayBuffer);
 
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
             sampleRate: 24000 // Gemini output rate
         });
         nextStartTime = audioContext.currentTime;
@@ -34,7 +43,10 @@ async function playNextAudio() {
     // Convert Int16 PCM to Float32 for AudioContext
     const float32Data = new Float32Array(pcmData.length);
     for (let i = 0; i < pcmData.length; i++) {
-        float32Data[i] = pcmData[i] / 0x8000;
+        const sample = pcmData[i];
+        if (sample !== undefined) {
+            float32Data[i] = sample / 0x8000;
+        }
     }
 
     const audioBuffer = audioContext.createBuffer(1, float32Data.length, 24000);
@@ -65,7 +77,7 @@ async function playNextAudio() {
     setTimeout(playNextAudio, 0);
 }
 
-socket.on('audio-out', (data) => {
+socket.on('audio-out', (data: ArrayBuffer) => {
     audioQueue.push(data);
     if (!isPlaying) {
         playNextAudio();
@@ -86,21 +98,30 @@ socket.on('interrupted', () => {
     isPlaying = false;
 });
 
-socket.on('transcription', (data) => {
+socket.on('transcription', (data: { type: string, text: string }) => {
     console.log(`[${data.type}] ${data.text}`);
 });
 
 function show_ui() {
-    overlay_button.style.display = "none";
-    video_playback.style.display = "block";
+    if (overlay_button) overlay_button.style.display = "none";
+    if (video_playback) video_playback.style.display = "block";
 }
 
-function handle_video_feed(data) {
+function handle_video_feed(data: string) {
     // console.log("Received video frame.");
     socket.emit('video-frame', data);
+
+    // Optional: Run local inference as well
+    /*
+    interpreter.interpret(data).then(result => {
+        if (result) {
+            console.log("Local Local AI Output:", result);
+        }
+    });
+    */
 }
 
-function handle_audio_feed(data) {
+function handle_audio_feed(data: ArrayBuffer) {
     // console.log("Received audio chunk.");
     socket.emit('audio-chunk', data);
 }
@@ -108,13 +129,12 @@ function handle_audio_feed(data) {
 function main() {
     indicator.setStatus("pending");
     // initialize webcam audio and video streams
-    const playback_streams = new WebcamAudioVideoStream(video_playback, {
+    const playback_streams = new WebcamAudioVideoStream(video_playback!, {
         onVideoFrame: handle_video_feed,
         onAudioData: handle_audio_feed
     });
     playback_streams.start();
     show_ui();
-
 }
 
 overlay_button.addEventListener("click", () => {
