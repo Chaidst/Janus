@@ -1,6 +1,6 @@
 import { IndicatorLight } from "./utils.js"
 import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js"
-import { SceneInterpreter } from "./scene-interpreter.js"
+//import { SceneInterpreter } from "./scene-interpreter.js"
 
 declare var io: any;
 
@@ -13,7 +13,7 @@ if (!overlay_button || !video_playback) {
 
 const indicator = new IndicatorLight();
 const socket = io();
-const interpreter = new SceneInterpreter(); // Local AI model initialization
+//const interpreter = new SceneInterpreter(); // Local AI model initialization
 
 // Handle audio playback from Gemini
 let audioQueue: ArrayBuffer[] = [];
@@ -152,19 +152,19 @@ async function handle_video_feed(data: string) {
     if (ignore) return;
     socket.emit('video-frame', data);
 
-    // Optional: Run local inference as well
-    if (is_interpreting) return;
-    is_interpreting = true;
-
-    try {
-        const result = await interpreter.interpret(data);
-        if (result) {
-            console.log("ignoring");
-            ignore = true;
-        }
-    } finally {
-        is_interpreting = false;
-    }
+    // // Optional: Run local inference as well
+    // if (is_interpreting) return;
+    // is_interpreting = true;
+    //
+    // try {
+    //     const result = await interpreter.interpret(data);
+    //     if (result) {
+    //         console.log("ignoring");
+    //         ignore = true;
+    //     }
+    // } finally {
+    //     is_interpreting = false;
+    // }
 }
 
 function handle_audio_feed(data: ArrayBuffer) {
