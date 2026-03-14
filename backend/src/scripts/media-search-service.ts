@@ -57,7 +57,7 @@ export class MediaSearchService {
                     source: item.displayLink,
                 };
             } else {
-                console.warn('MediaSearchService: Custom Search API returned no items. Response:', data);
+                console.warn('MediaSearchService: Custom Search API returned no items. Response:', JSON.stringify(data, null, 2));
             }
             return null;
         } catch (error) {
@@ -97,7 +97,7 @@ export class MediaSearchService {
                     thumbnail: item.snippet.thumbnails?.medium?.url || '',
                 };
             } else {
-                console.warn('MediaSearchService: YouTube API returned no items. Response:', data);
+                console.warn('MediaSearchService: YouTube API returned no items. Response:', JSON.stringify(data, null, 2));
             }
             return null;
         } catch (error) {
