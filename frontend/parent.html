@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Janus Parent Portal</title>
+    <!-- Use Google Fonts for the Gemini aesthetic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./parent.css" />
+</head>
+<body class="parent-portal dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">Janus <span>Parent</span></div>
+                <button id="new-chat-btn" class="new-chat-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>New Chat</span>
+                </button>
+            </div>
+            <div class="recent-sessions-container">
+                <div class="section-title">Child Sessions</div>
+                <div id="sessions-list" class="sessions-list">
+                    <!-- Sessions will be populated here -->
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <h1 id="current-view-title">Chat with Gemini</h1>
+                <div class="user-profile">P</div>
+            </header>
+
+            <div id="chat-container" class="chat-container">
+                <div id="welcome-screen" class="welcome-screen">
+                    <div class="gemini-sparkle-large">✨</div>
+                    <h2>Hello, Parent.</h2>
+                    <p>How can I help you understand your child's recent sessions?</p>
+                </div>
+                
+                <div id="messages-area" class="messages-area">
+                    <!-- Chat bubbles will go here -->
+                </div>
+                
+                <div id="transcript-area" class="transcript-area hidden">
+                    <!-- Session transcript will go here -->
+                </div>
+            </div>
+
+            <div id="input-container" class="input-container">
+                <div class="input-box">
+                    <textarea id="chat-input" placeholder="Ask about your child's conversations..." rows="1"></textarea>
+                    <button id="send-btn" class="send-btn" disabled>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="disclaimer">Gemini can make mistakes. Check important info.</div>
+            </div>
+        </main>
+    </div>
+    
+    <script type="module" src="/scripts/parent-chat.ts"></script>
+</body>
+</html>
