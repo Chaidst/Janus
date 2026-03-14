@@ -364,6 +364,79 @@ body.parent-portal {
   line-height: 1.5;
 }
 
+.transcript-summary {
+  margin-top: 16px;
+}
+
+.transcript-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.transcript-summary-header strong {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.summary-text {
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.summary-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 112px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 199, 250, 0.28);
+  background: rgba(168, 199, 250, 0.12);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.summary-audio-btn:hover:not(:disabled) {
+  background: rgba(168, 199, 250, 0.2);
+  border-color: rgba(168, 199, 250, 0.45);
+  transform: translateY(-1px);
+}
+
+.summary-audio-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.summary-audio-btn.is-playing {
+  background: rgba(171, 71, 188, 0.18);
+  border-color: rgba(171, 71, 188, 0.35);
+}
+
+.summary-audio-btn.is-failed {
+  background: rgba(255, 138, 138, 0.12);
+  border-color: rgba(255, 138, 138, 0.3);
+}
+
+.summary-audio-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .log-entry {
   display: flex;
   margin-bottom: 12px;
@@ -414,5 +487,14 @@ body.parent-portal {
   }
   .sidebar.open {
     left: 0;
+  }
+
+  .transcript-summary-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .summary-audio-btn {
+    width: 100%;
   }
 }

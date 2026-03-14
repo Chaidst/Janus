@@ -6,8 +6,61 @@ declare var io: any;
 
 const overlay_button = document.querySelector<HTMLButtonElement>("#overlay-button");
 const video_playback = document.querySelector<HTMLVideoElement>("#video-playback");
+const activityBanner = document.querySelector<HTMLDivElement>("#activity-banner");
+const arFocusRing = document.querySelector<HTMLDivElement>("#ar-focus-ring");
+const arOverlayCard = document.querySelector<HTMLDivElement>("#ar-overlay-card");
+const arOverlayBadge = document.querySelector<HTMLDivElement>("#ar-overlay-badge");
+const arOverlayTitle = document.querySelector<HTMLDivElement>("#ar-overlay-title");
+const arOverlaySubtitle = document.querySelector<HTMLDivElement>("#ar-overlay-subtitle");
+const arOverlayItems = document.querySelector<HTMLDivElement>("#ar-overlay-items");
+const arOverlayPrompt = document.querySelector<HTMLDivElement>("#ar-overlay-prompt");
+const generatedArStage = document.querySelector<HTMLDivElement>("#generated-ar-stage");
+const generatedArImage = document.querySelector<HTMLImageElement>("#generated-ar-image");
+const generatedArShadow = document.querySelector<HTMLDivElement>("#generated-ar-shadow");
+const celebrationLayer = document.querySelector<HTMLDivElement>("#celebration-layer");
 
-if (!overlay_button || !video_playback) {
+type ArOverlayPayload = {
+    mode: 'teaching' | 'hunt' | 'success';
+    badge: string;
+    title: string;
+    subtitle?: string;
+    prompt?: string;
+    accent?: string;
+    items?: string[];
+    celebration?: boolean;
+};
+
+type GeneratedArObjectPayload = {
+    objectName: string;
+    anchorTarget: string;
+    imageDataUrl: string;
+    anchorBox: {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+    };
+    title: string;
+    prompt?: string;
+    accent: string;
+};
+
+if (
+    !overlay_button ||
+    !video_playback ||
+    !activityBanner ||
+    !arFocusRing ||
+    !arOverlayCard ||
+    !arOverlayBadge ||
+    !arOverlayTitle ||
+    !arOverlaySubtitle ||
+    !arOverlayItems ||
+    !arOverlayPrompt ||
+    !generatedArStage ||
+    !generatedArImage ||
+    !generatedArShadow ||
+    !celebrationLayer
+) {
     throw new Error("Required DOM elements not found");
 }
 
@@ -21,6 +74,197 @@ let isPlaying = false;
 let audioContext: AudioContext | null = null;
 let nextStartTime = 0;
 let activeSources: AudioBufferSourceNode[] = [];
+let celebrationTimeout: number | null = null;
+let generatedArRefreshInterval: number | null = null;
+let generatedArProcessToken = 0;
+const cleanedSpriteCache = new Map<string, string>();
+
+function escapeHtml(value: string) {
+    const escapes: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    };
+
+    return value.replace(/[&<>"']/g, (character) => escapes[character] || character);
+}
+
+function clearCelebration() {
+    if (celebrationTimeout !== null) {
+        window.clearTimeout(celebrationTimeout);
+        celebrationTimeout = null;
+    }
+    celebrationLayer.classList.add('hidden');
+    celebrationLayer.innerHTML = '';
+}
+
+function triggerCelebration(accent = '#ffd166') {
+    clearCelebration();
+    celebrationLayer.classList.remove('hidden');
+
+    const burst = document.createElement('div');
+    burst.className = 'celebration-burst';
+    burst.style.color = accent;
+    burst.style.setProperty('--accent', accent);
+    celebrationLayer.appendChild(burst);
+
+    for (let i = 0; i < 8; i++) {
+        const star = document.createElement('div');
+        star.className = 'celebration-star';
+        star.style.left = `${35 + Math.random() * 30}%`;
+        star.style.top = `${35 + Math.random() * 30}%`;
+        star.style.background = accent;
+        star.style.setProperty('--tx', `${(Math.random() - 0.5) * 260}px`);
+        star.style.setProperty('--ty', `${(Math.random() - 0.5) * 220}px`);
+        celebrationLayer.appendChild(star);
+    }
+
+    celebrationTimeout = window.setTimeout(() => {
+        clearCelebration();
+    }, 1600);
+}
+
+function clearArOverlay() {
+    activityBanner.textContent = '';
+    activityBanner.classList.add('hidden');
+    arFocusRing.classList.add('hidden');
+    arOverlayCard.classList.add('hidden');
+    arOverlayCard.style.removeProperty('border-color');
+    arOverlayCard.style.removeProperty('box-shadow');
+    arOverlayBadge.textContent = '';
+    arOverlayTitle.textContent = '';
+    arOverlaySubtitle.textContent = '';
+    arOverlayPrompt.textContent = '';
+    arOverlayItems.innerHTML = '';
+    clearCelebration();
+}
+
+function stopGeneratedArRefresh() {
+    if (generatedArRefreshInterval !== null) {
+        window.clearInterval(generatedArRefreshInterval);
+        generatedArRefreshInterval = null;
+    }
+}
+
+function clearGeneratedArObject() {
+    stopGeneratedArRefresh();
+    generatedArStage.classList.add('hidden');
+    generatedArStage.style.removeProperty('left');
+    generatedArStage.style.removeProperty('top');
+    generatedArStage.style.removeProperty('width');
+    generatedArStage.style.removeProperty('height');
+    generatedArImage.src = '';
+}
+
+async function removeWhiteBackground(dataUrl: string) {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+        return dataUrl;
+    }
+
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const red = data[i] ?? 0;
+        const green = data[i + 1] ?? 0;
+        const blue = data[i + 2] ?? 0;
+        if (red > 245 && green > 245 && blue > 245) {
+            data[i + 3] = 0;
+        }
+    }
+
+    context.putImageData(imageData, 0, 0);
+    return canvas.toDataURL('image/png');
+}
+
+function positionGeneratedArObject(anchorBox: GeneratedArObjectPayload['anchorBox']) {
+    const left = (anchorBox.x1 / 1000) * window.innerWidth;
+    const top = (anchorBox.y1 / 1000) * window.innerHeight;
+    const width = ((anchorBox.x2 - anchorBox.x1) / 1000) * window.innerWidth;
+    const height = ((anchorBox.y2 - anchorBox.y1) / 1000) * window.innerHeight;
+
+    const spriteWidth = Math.max(120, Math.min(width * 0.38, window.innerWidth * 0.26));
+    const spriteHeight = spriteWidth * 1.08;
+    const spriteLeft = left + (width * 0.52) - (spriteWidth / 2);
+    const spriteTop = top + (height * 0.2) - (spriteHeight * 0.45);
+
+    generatedArStage.style.left = `${spriteLeft}px`;
+    generatedArStage.style.top = `${spriteTop}px`;
+    generatedArStage.style.width = `${spriteWidth}px`;
+    generatedArStage.style.height = `${spriteHeight}px`;
+}
+
+async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
+    const token = ++generatedArProcessToken;
+    positionGeneratedArObject(payload.anchorBox);
+    generatedArShadow.style.background = `radial-gradient(circle, rgba(20, 18, 16, 0.34) 0%, ${payload.accent}22 38%, rgba(20, 18, 16, 0) 74%)`;
+    generatedArStage.classList.remove('hidden');
+
+    const cleanedDataUrl = cleanedSpriteCache.get(payload.imageDataUrl) || await removeWhiteBackground(payload.imageDataUrl);
+    if (token !== generatedArProcessToken) {
+        return;
+    }
+
+    cleanedSpriteCache.set(payload.imageDataUrl, cleanedDataUrl);
+    generatedArImage.src = cleanedDataUrl;
+    generatedArImage.alt = payload.objectName;
+
+    if (generatedArRefreshInterval === null) {
+        generatedArRefreshInterval = window.setInterval(() => {
+            socket.emit('request-ar-anchor-refresh');
+        }, 1800);
+    }
+}
+
+function renderArOverlay(payload: ArOverlayPayload) {
+    const accent = payload.accent || '#b794f4';
+    activityBanner.textContent = payload.mode === 'hunt'
+        ? payload.prompt || payload.title
+        : payload.badge;
+    activityBanner.classList.remove('hidden');
+
+    arFocusRing.classList.toggle('hidden', payload.mode === 'success');
+    arFocusRing.style.borderColor = accent;
+    arFocusRing.style.boxShadow = `0 0 0 12px rgba(255,255,255,0.08), 0 0 80px ${accent}55`;
+
+    arOverlayCard.classList.remove('hidden');
+    arOverlayCard.style.borderColor = `${accent}66`;
+    arOverlayCard.style.boxShadow = `0 18px 48px rgba(0, 0, 0, 0.42), 0 0 0 1px ${accent}22`;
+    arOverlayBadge.textContent = payload.badge;
+    arOverlayTitle.textContent = payload.title;
+    arOverlaySubtitle.textContent = payload.subtitle || '';
+    arOverlayPrompt.textContent = payload.prompt || '';
+
+    arOverlayItems.innerHTML = '';
+    for (const item of payload.items || []) {
+        const chip = document.createElement('div');
+        chip.className = 'ar-chip';
+        chip.textContent = item;
+        chip.style.background = `${accent}22`;
+        chip.style.border = `1px solid ${accent}55`;
+        arOverlayItems.appendChild(chip);
+    }
+
+    if (payload.celebration) {
+        triggerCelebration(accent);
+    } else {
+        clearCelebration();
+    }
+}
 
 async function playNextAudio() {
     if (audioQueue.length === 0) {
@@ -138,6 +382,39 @@ socket.on('tool-call', (data: { name: string; args: any }) => {
             popup.classList.add('dismissing');
             setTimeout(() => popup.remove(), 500);
         }, 10000);
+        return;
+    }
+
+    if (data.name === 'ar_overlay') {
+        renderArOverlay(data.args as ArOverlayPayload);
+        return;
+    }
+
+    if (data.name === 'clear_ar_overlay') {
+        clearArOverlay();
+        return;
+    }
+
+    if (data.name === 'generated_ar_status') {
+        const args = data.args as { message?: string };
+        if (args.message) {
+            activityBanner.textContent = args.message;
+            activityBanner.classList.remove('hidden');
+        } else if (activityBanner.textContent?.includes('Making ')) {
+            activityBanner.textContent = '';
+            activityBanner.classList.add('hidden');
+        }
+        return;
+    }
+
+    if (data.name === 'generated_ar_object') {
+        const payload = data.args as GeneratedArObjectPayload;
+        void renderGeneratedArObject(payload);
+        return;
+    }
+
+    if (data.name === 'clear_generated_ar_object') {
+        clearGeneratedArObject();
     }
 });
 
@@ -185,4 +462,10 @@ function main() {
 
 overlay_button.addEventListener("click", () => {
     main();
+});
+
+window.addEventListener('resize', () => {
+    if (!generatedArStage.classList.contains('hidden')) {
+        socket.emit('request-ar-anchor-refresh');
+    }
 });
