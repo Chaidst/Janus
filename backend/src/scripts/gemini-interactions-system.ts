@@ -1,6 +1,7 @@
 import {Socket} from 'socket.io';
 import {GoogleGenAI, Modality, type Schema, type Session, Type, StartSensitivity, EndSensitivity} from "@google/genai"
 import {MediaSearchService} from './media-search-service.js'
+import { db } from './firebase.js';
 
 // constants
 const LIVE_PROMPT = `You are a warm, gentle, and encouraging learning companion for little ones aged 2 to 6. You interact through real-time audio and video, meaning you share their world, see what they see, and chat with them just like a supportive, friendly playmate. 
@@ -71,12 +72,27 @@ export class GeminiInteractionSystem {
     private mediaSearch: MediaSearchService;
     private audioBuffer: Int16Array = new Int16Array(0);
 
+    private sessionId: string;
+    private sessionMessages: { role: 'user' | 'model', text: string, timestamp: number }[] = [];
+    private sessionRef: FirebaseFirestore.DocumentReference;
+
     
     constructor(api_key: string, user_socket: Socket) {
         this.AI = new GoogleGenAI({apiKey: api_key, httpOptions: {"apiVersion": "v1alpha"}});
         this.socket = user_socket;
         this.tools = new Tools(this.AI, user_socket);
         this.mediaSearch = new MediaSearchService();
+        
+        this.sessionId = Date.now().toString();
+        this.sessionRef = db.collection('families').doc('default').collection('children').doc('default').collection('sessions').doc(this.sessionId);
+        
+        // Cannot use 'await' in constructor, but firestore writes are optimistic
+        this.sessionRef.set({
+            startedAt: Date.now(),
+            summary: "",
+            messages: []
+        });
+
         this.initialize_tools();
         this.AI.live.connect({
             model: GeminiInteractionSystem.LIVE_MODEL,
@@ -103,9 +119,13 @@ export class GeminiInteractionSystem {
                     }
                     if (content?.inputTranscription) {
                         this.socket.emit('transcription', { type: 'user', text: content.inputTranscription.text });
+                        this.sessionMessages.push({ role: 'user', text: content.inputTranscription.text || "", timestamp: Date.now() });
+                        this.sessionRef.update({ messages: this.sessionMessages }).catch(console.error);
                     }
                     if (content?.outputTranscription) {
                         this.socket.emit('transcription', { type: 'model', text: content.outputTranscription.text });
+                        this.sessionMessages.push({ role: 'model', text: content.outputTranscription.text || "", timestamp: Date.now() });
+                        this.sessionRef.update({ messages: this.sessionMessages }).catch(console.error);
                     }
                     if (message.toolCall) {
                         console.log("Tools to call:", message.toolCall.functionCalls);
@@ -155,9 +175,33 @@ export class GeminiInteractionSystem {
 
         this.socket.on("disconnect", () => {
             console.log("Client disconnected");
-            this.shutdown_sockets();
-            this.session?.close();
+            this.generateSummary().finally(() => {
+                this.shutdown_sockets();
+                this.session?.close();
+            });
         });
+    }
+
+    private async generateSummary() {
+        if (this.sessionMessages.length === 0) return;
+        
+        try {
+            console.log("Generating session summary...");
+            const transcript = this.sessionMessages.map(m => `${m.role}: ${m.text}`).join('\n');
+            const response = await this.AI.models.generateContent({
+                model: 'gemini-2.5-flash-lite',
+                contents: `Summarize the following conversation between a child (user) and an AI companion (model). Keep it to 2-3 sentences. Focus on what the child was interested in or learning about:\n\n${transcript}`
+            });
+            const summary = response.text || "No summary available.";
+            
+            await this.sessionRef.update({
+                endedAt: Date.now(),
+                summary: summary
+            });
+            console.log("Session summary saved.");
+        } catch (error) {
+            console.error("Error generating or saving summary:", error);
+        }
     }
 
     private shutdown_sockets() {
