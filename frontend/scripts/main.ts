@@ -102,6 +102,42 @@ socket.on('transcription', (data: { type: string, text: string }) => {
     console.log(`[${data.type}] ${data.text}`);
 });
 
+// ── Media Popup Handler ──────────────────────────────────────────────────────
+socket.on('show-media', (data: { type: string; url?: string; videoId?: string; title: string }) => {
+    // Remove any existing popup first
+    const existing = document.querySelector('.media-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.className = 'media-popup';
+
+    if (data.type === 'video' && data.videoId) {
+        const iframe = document.createElement('iframe');
+        iframe.src = `https://www.youtube.com/embed/${data.videoId}?autoplay=1&mute=1`;
+        iframe.allow = 'autoplay; encrypted-media';
+        iframe.allowFullscreen = true;
+        popup.appendChild(iframe);
+    } else if (data.url) {
+        const img = document.createElement('img');
+        img.src = data.url;
+        img.alt = data.title;
+        popup.appendChild(img);
+    }
+
+    const title = document.createElement('div');
+    title.className = 'media-popup-title';
+    title.textContent = data.title;
+    popup.appendChild(title);
+
+    document.body.appendChild(popup);
+
+    // Auto-dismiss after 10 seconds
+    setTimeout(() => {
+        popup.classList.add('dismissing');
+        setTimeout(() => popup.remove(), 500);
+    }, 10000);
+});
+
 function show_ui() {
     if (overlay_button) overlay_button.style.display = "none";
     if (video_playback) video_playback.style.display = "block";
