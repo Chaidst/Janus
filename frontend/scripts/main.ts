@@ -1,5 +1,6 @@
 import { IndicatorLight } from "./utils.js";
 import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js";
+import { HandTracker } from "./hand-tracker.js";
 //import { SceneInterpreter } from "./scene-interpreter.js"
 
 declare var io: any;
@@ -94,6 +95,10 @@ let activeSources: AudioBufferSourceNode[] = [];
 let celebrationTimeout: number | null = null;
 let generatedArRefreshInterval: number | null = null;
 let generatedArProcessToken = 0;
+let handTracker: HandTracker | null = null;
+let generatedArDragActive = false;
+let generatedArDragOffsetX = 0;
+let generatedArDragOffsetY = 0;
 const cleanedSpriteCache = new Map<string, string>();
 
 function escapeHtml(value: string) {
@@ -171,11 +176,75 @@ function stopGeneratedArRefresh() {
 function clearGeneratedArObject() {
   stopGeneratedArRefresh();
   generatedArStage.classList.add("hidden");
+  generatedArStage.classList.remove("is-grabbed");
   generatedArStage.style.removeProperty("left");
   generatedArStage.style.removeProperty("top");
   generatedArStage.style.removeProperty("width");
   generatedArStage.style.removeProperty("height");
   generatedArImage.src = "";
+  generatedArDragActive = false;
+}
+
+function getGeneratedArStageSize() {
+  return {
+    width: generatedArStage.offsetWidth || 220,
+    height: generatedArStage.offsetHeight || 220,
+  };
+}
+
+function applyGeneratedArStagePosition(left: number, top: number) {
+  const { width, height } = getGeneratedArStageSize();
+  const clampedLeft = Math.max(0, Math.min(window.innerWidth - width, left));
+  const clampedTop = Math.max(0, Math.min(window.innerHeight - height, top));
+
+  generatedArStage.style.left = `${clampedLeft}px`;
+  generatedArStage.style.top = `${clampedTop}px`;
+}
+
+function centerGeneratedArObject() {
+  const viewportSpan = Math.min(window.innerWidth, window.innerHeight);
+  const spriteWidth = Math.max(160, Math.min(viewportSpan * 0.34, 260));
+  const spriteHeight = spriteWidth * 1.08;
+  const left = (window.innerWidth - spriteWidth) / 2;
+  const top = (window.innerHeight - spriteHeight) / 2 - window.innerHeight * 0.04;
+
+  generatedArStage.style.width = `${spriteWidth}px`;
+  generatedArStage.style.height = `${spriteHeight}px`;
+  applyGeneratedArStagePosition(left, top);
+}
+
+function hitTestGeneratedArObject(x: number, y: number) {
+  if (generatedArStage.classList.contains("hidden")) {
+    return false;
+  }
+
+  const rect = generatedArStage.getBoundingClientRect();
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function beginGeneratedArDrag(x: number, y: number) {
+  if (!hitTestGeneratedArObject(x, y)) {
+    return;
+  }
+
+  const rect = generatedArStage.getBoundingClientRect();
+  generatedArDragActive = true;
+  generatedArDragOffsetX = x - rect.left;
+  generatedArDragOffsetY = y - rect.top;
+  generatedArStage.classList.add("is-grabbed");
+}
+
+function moveGeneratedArDrag(x: number, y: number) {
+  if (!generatedArDragActive) {
+    return;
+  }
+
+  applyGeneratedArStagePosition(x - generatedArDragOffsetX, y - generatedArDragOffsetY);
+}
+
+function endGeneratedArDrag() {
+  generatedArDragActive = false;
+  generatedArStage.classList.remove("is-grabbed");
 }
 
 async function removeWhiteBackground(dataUrl: string) {
@@ -214,23 +283,8 @@ async function removeWhiteBackground(dataUrl: string) {
 function positionGeneratedArObject(
   anchorBox: GeneratedArObjectPayload["anchorBox"],
 ) {
-  const left = (anchorBox.x1 / 1000) * window.innerWidth;
-  const top = (anchorBox.y1 / 1000) * window.innerHeight;
-  const width = ((anchorBox.x2 - anchorBox.x1) / 1000) * window.innerWidth;
-  const height = ((anchorBox.y2 - anchorBox.y1) / 1000) * window.innerHeight;
-
-  const spriteWidth = Math.max(
-    120,
-    Math.min(width * 0.38, window.innerWidth * 0.26),
-  );
-  const spriteHeight = spriteWidth * 1.08;
-  const spriteLeft = left + width * 0.52 - spriteWidth / 2;
-  const spriteTop = top + height * 0.2 - spriteHeight * 0.45;
-
-  generatedArStage.style.left = `${spriteLeft}px`;
-  generatedArStage.style.top = `${spriteTop}px`;
-  generatedArStage.style.width = `${spriteWidth}px`;
-  generatedArStage.style.height = `${spriteHeight}px`;
+  void anchorBox;
+  centerGeneratedArObject();
 }
 
 async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
@@ -249,12 +303,7 @@ async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
   cleanedSpriteCache.set(payload.imageDataUrl, cleanedDataUrl);
   generatedArImage.src = cleanedDataUrl;
   generatedArImage.alt = payload.objectName;
-
-  if (generatedArRefreshInterval === null) {
-    generatedArRefreshInterval = window.setInterval(() => {
-      socket.emit("request-ar-anchor-refresh");
-    }, 1800);
-  }
+  endGeneratedArDrag();
 }
 
 function renderArOverlay(payload: ArOverlayPayload) {
@@ -477,23 +526,36 @@ function handle_audio_feed(data: ArrayBuffer) {
   socket.emit("audio-chunk", data);
 }
 
-function main() {
+async function main() {
   indicator.setStatus("pending");
   // initialize webcam audio and video streams
   const playback_streams = new WebcamAudioVideoStream(video_playback!, {
     onVideoFrame: handle_video_feed,
     onAudioData: handle_audio_feed,
   });
-  playback_streams.start();
+  await playback_streams.start();
+
+  if (!handTracker) {
+    handTracker = new HandTracker(video_playback!, {
+      onPinchStart: beginGeneratedArDrag,
+      onPinchMove: moveGeneratedArDrag,
+      onPinchEnd: endGeneratedArDrag,
+    });
+  }
+
+  void handTracker.start();
   show_ui();
 }
 
 overlay_button.addEventListener("click", () => {
-  main();
+  void main();
 });
 
 window.addEventListener("resize", () => {
   if (!generatedArStage.classList.contains("hidden")) {
-    socket.emit("request-ar-anchor-refresh");
+    applyGeneratedArStagePosition(
+      generatedArStage.offsetLeft,
+      generatedArStage.offsetTop,
+    );
   }
 });
