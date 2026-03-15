@@ -1547,55 +1547,6 @@ export class GeminiInteractionSystem {
     }
   }
 
-  private muxVideoAndAudio(
-    videoPath: string,
-    audioPath: string,
-    outputPath: string,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!ffmpegPath || typeof ffmpegPath !== "string") {
-        return reject(new Error("ffmpeg-static path not found"));
-      }
-
-      const ffmpeg = spawn(ffmpegPath, [
-        "-i",
-        videoPath,
-        "-i",
-        audioPath,
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        "-y",
-        outputPath,
-      ]);
-
-      let stderr = "";
-      ffmpeg.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      ffmpeg.on("close", (code: number | null) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(
-            new Error(`ffmpeg muxing exited with code ${code}: ${stderr}`),
-          );
-        }
-      });
-
-      ffmpeg.on("error", (error: Error) => {
-        reject(error);
-      });
-    });
-  }
-
   private createWavBuffer(pcmData: Buffer): Buffer {
     const sampleRate = GeminiInteractionSystem.AUDIO_SAMPLE_RATE;
     const numChannels = 1;
