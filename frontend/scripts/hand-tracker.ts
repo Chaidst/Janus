@@ -8,11 +8,23 @@ type HandLandmarkerResult = {
   landmarks?: Landmark[][];
 };
 
+type HandLandmarkerModule = {
+  FilesetResolver: {
+    forVisionTasks(wasmRoot: string): Promise<unknown>;
+  };
+  HandLandmarker: {
+    createFromOptions(
+      vision: unknown,
+      options: Record<string, unknown>,
+    ): Promise<HandLandmarkerInstance>;
+  };
+};
+
 type HandLandmarkerInstance = {
   detectForVideo(
     video: HTMLVideoElement,
-    timestampMs: number,
   ): HandLandmarkerResult;
+  setOptions?(options: Record<string, unknown>): Promise<void> | void;
 };
 
 type HandTrackerCallbacks = {
@@ -23,29 +35,18 @@ type HandTrackerCallbacks = {
   onError?: (message: string) => void;
 };
 
-declare global {
-  interface Window {
-    FilesetResolver?: {
-      forVisionTasks(wasmRoot: string): Promise<unknown>;
-    };
-    HandLandmarker?: {
-      createFromOptions(
-        vision: unknown,
-        options: Record<string, unknown>,
-      ): Promise<HandLandmarkerInstance>;
-    };
-  }
-}
-
 const PINCH_START_THRESHOLD = 0.045;
 const PINCH_END_THRESHOLD = 0.065;
 const MODEL_ASSET_PATH =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const MEDIAPIPE_MODULE_URL =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
 
 class HandTracker {
   private video: HTMLVideoElement;
   private callbacks: HandTrackerCallbacks;
   private handLandmarker: HandLandmarkerInstance | null = null;
+  private mediapipeModule: HandLandmarkerModule | null = null;
   private animationFrameId: number | null = null;
   private isRunning = false;
   private pinchActive = false;
@@ -93,18 +94,15 @@ class HandTracker {
     }
 
     this.initializationPromise = (async () => {
-      if (!window.FilesetResolver || !window.HandLandmarker) {
-        const message = "MediaPipe vision bundle is unavailable.";
-        console.warn(message);
-        this.callbacks.onError?.(message);
-        return;
-      }
+      this.mediapipeModule = await this.loadMediapipeModule();
+      const { FilesetResolver } = this.mediapipeModule;
 
-      const vision = await window.FilesetResolver.forVisionTasks(
+      const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
       );
 
       this.handLandmarker = await this.createHandLandmarker(vision);
+      await this.handLandmarker.setOptions?.({ runningMode: "VIDEO" });
       this.callbacks.onReady?.();
     })();
 
@@ -120,9 +118,30 @@ class HandTracker {
     }
   }
 
+  private async loadMediapipeModule() {
+    try {
+      return (await import(
+        /* @vite-ignore */ MEDIAPIPE_MODULE_URL
+      )) as HandLandmarkerModule;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "MediaPipe vision bundle is unavailable.";
+      console.warn("Unable to load MediaPipe vision module:", error);
+      this.callbacks.onError?.(message);
+      throw error;
+    }
+  }
+
   private async createHandLandmarker(vision: unknown) {
+    const module = this.mediapipeModule;
+    if (!module) {
+      throw new Error("MediaPipe module not loaded.");
+    }
+
     const create = (delegate: "GPU" | "CPU") =>
-      window.HandLandmarker!.createFromOptions(vision, {
+      module.HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: MODEL_ASSET_PATH,
           delegate,
@@ -170,10 +189,7 @@ class HandTracker {
       this.video.videoWidth > 0 &&
       this.video.currentTime !== this.lastVideoTime
     ) {
-      const result = this.handLandmarker.detectForVideo(
-        this.video,
-        performance.now(),
-      );
+      const result = this.handLandmarker.detectForVideo(this.video);
       this.lastVideoTime = this.video.currentTime;
       this.handleResult(result);
     }
