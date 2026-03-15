@@ -282,7 +282,7 @@ export class GeminiInteractionSystem {
     private static readonly VIDEO_SENT_RATE = 1000;
     private static readonly AUDIO_SENT_RATE = 40;
 
-    private static readonly AUDIO_VIDEO_HISTORY_DURATION_MS = 15000;
+    private static readonly AUDIO_VIDEO_HISTORY_DURATION_MS = 30000;
     private static readonly AUDIO_SAMPLE_RATE = 16000;
     private static readonly MAX_AUDIO_HISTORY_SIZE = (GeminiInteractionSystem.AUDIO_VIDEO_HISTORY_DURATION_MS / 1000) * GeminiInteractionSystem.AUDIO_SAMPLE_RATE;
     private static readonly VIDEO_FPS = 1;
@@ -423,6 +423,7 @@ export class GeminiInteractionSystem {
                 if (part.inlineData?.data) {
                     const audioBuffer = Buffer.from(part.inlineData.data, 'base64');
                     this.socket.emit('audio-out', audioBuffer);
+                    this.feedbackTracking.geminiLastSpoke = Date.now();
                 }
             }
         }
@@ -443,6 +444,7 @@ export class GeminiInteractionSystem {
             this.socket.emit('transcription', { type: 'model', text });
             this.sessionMessages.push({ role: 'model', text, timestamp: Date.now() });
             this.sessionRef.update({ messages: this.sessionMessages }).catch(console.error);
+            this.feedbackTracking.geminiLastSpoke = Date.now();
         }
 
         if (message.toolCall) {
