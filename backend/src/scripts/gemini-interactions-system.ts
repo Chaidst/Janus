@@ -2263,34 +2263,38 @@ Only return the JSON object.`,
     };
   }
 
-  private async getOrGenerateSprite(objectName: string): Promise<string> {
-    const cacheKey = `sprite:${objectName.toLowerCase()}`;
+  private async getOrGenerateSprite(objectName: string) {
+    const cacheKey = objectName.toLowerCase();
     const cached = this.generatedSpriteCache.get(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const response = await this.AI.models.generateContent({
-        model: "gemini-2.0-flash-exp-image-generation",
-        contents: [
-          {
-            text: `Generate a cute, toy-like ${objectName} suitable for a 4-year-old child. Small, friendly, and magical. Single object on transparent background. Side view or 3/4 view so it looks like it's standing on a surface.`,
-          },
-        ],
-      } as any);
-
-      const imageBytes =
-        response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!imageBytes) {
-        throw new Error("No image generated");
-      }
-
-      const dataUrl = `data:image/png;base64,${imageBytes}`;
-      this.generatedSpriteCache.set(cacheKey, dataUrl);
-      return dataUrl;
-    } catch (error) {
-      console.error("Error generating sprite:", error);
-      return `https://placehold.co/400x400/png?text=${encodeURIComponent(objectName)}`;
+    if (cached) {
+      return cached;
     }
+
+    const response = await this.AI.models.generateImages({
+      model: "imagen-3.0-generate-001",
+      prompt: `Create a cute, friendly, children's-book style ${objectName} sticker.
+Full body.
+Centered.
+Pure white background.
+No scenery.
+No frame.
+No text.
+No shadow.
+Bright colors.
+Appealing for ages 2 to 6.`,
+      config: {
+        numberOfImages: 1,
+      },
+    });
+
+    const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
+    if (!imageBytes) {
+      throw new Error(`No generated image returned for ${objectName}`);
+    }
+
+    const dataUrl = `data:image/png;base64,${imageBytes}`;
+    this.generatedSpriteCache.set(cacheKey, dataUrl);
+    return dataUrl;
   }
 
   private async generateSummary(): Promise<void> {

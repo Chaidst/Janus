@@ -215,7 +215,8 @@ function centerGeneratedArObject() {
   const spriteWidth = Math.max(160, Math.min(viewportSpan * 0.34, 260));
   const spriteHeight = spriteWidth * 1.08;
   const left = (window.innerWidth - spriteWidth) / 2;
-  const top = (window.innerHeight - spriteHeight) / 2 - window.innerHeight * 0.04;
+  const top =
+    (window.innerHeight - spriteHeight) / 2 - window.innerHeight * 0.04;
 
   generatedArStage.style.width = `${spriteWidth}px`;
   generatedArStage.style.height = `${spriteHeight}px`;
@@ -248,7 +249,10 @@ function moveGeneratedArDrag(x: number, y: number) {
     return;
   }
 
-  applyGeneratedArStagePosition(x - generatedArDragOffsetX, y - generatedArDragOffsetY);
+  applyGeneratedArStagePosition(
+    x - generatedArDragOffsetX,
+    y - generatedArDragOffsetY,
+  );
 }
 
 function endGeneratedArDrag() {
@@ -262,6 +266,7 @@ function endGeneratedArDrag() {
 async function removeWhiteBackground(dataUrl: string) {
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = dataUrl;
