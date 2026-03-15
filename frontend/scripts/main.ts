@@ -1,5 +1,6 @@
 import { IndicatorLight } from "./utils.js";
 import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js";
+import { HandTracker } from "./hand-tracker.js";
 //import { SceneInterpreter } from "./scene-interpreter.js"
 
 declare var io: any;
@@ -35,6 +36,7 @@ const generatedArShadow = document.querySelector<HTMLDivElement>(
 );
 const celebrationLayer =
   document.querySelector<HTMLDivElement>("#celebration-layer");
+const handTrackingStatus = document.createElement("div");
 
 type ArOverlayPayload = {
   mode: "teaching" | "hunt" | "success";
@@ -61,6 +63,12 @@ type GeneratedArObjectPayload = {
   prompt?: string;
   accent: string;
 };
+
+type GeneratedArInteractionState =
+  | "hidden"
+  | "camera-space"
+  | "grabbed"
+  | "released";
 
 if (
   !overlay_button ||
@@ -94,6 +102,11 @@ let activeSources: AudioBufferSourceNode[] = [];
 let celebrationTimeout: number | null = null;
 let generatedArRefreshInterval: number | null = null;
 let generatedArProcessToken = 0;
+let handTracker: HandTracker | null = null;
+let generatedArDragActive = false;
+let generatedArDragOffsetX = 0;
+let generatedArDragOffsetY = 0;
+let generatedArInteractionState: GeneratedArInteractionState = "hidden";
 const cleanedSpriteCache = new Map<string, string>();
 
 function escapeHtml(value: string) {
@@ -171,11 +184,79 @@ function stopGeneratedArRefresh() {
 function clearGeneratedArObject() {
   stopGeneratedArRefresh();
   generatedArStage.classList.add("hidden");
+  generatedArStage.classList.remove("is-grabbed");
   generatedArStage.style.removeProperty("left");
   generatedArStage.style.removeProperty("top");
   generatedArStage.style.removeProperty("width");
   generatedArStage.style.removeProperty("height");
   generatedArImage.src = "";
+  generatedArDragActive = false;
+  generatedArInteractionState = "hidden";
+}
+
+function getGeneratedArStageSize() {
+  return {
+    width: generatedArStage.offsetWidth || 220,
+    height: generatedArStage.offsetHeight || 220,
+  };
+}
+
+function applyGeneratedArStagePosition(left: number, top: number) {
+  const { width, height } = getGeneratedArStageSize();
+  const clampedLeft = Math.max(0, Math.min(window.innerWidth - width, left));
+  const clampedTop = Math.max(0, Math.min(window.innerHeight - height, top));
+
+  generatedArStage.style.left = `${clampedLeft}px`;
+  generatedArStage.style.top = `${clampedTop}px`;
+}
+
+function centerGeneratedArObject() {
+  const viewportSpan = Math.min(window.innerWidth, window.innerHeight);
+  const spriteWidth = Math.max(160, Math.min(viewportSpan * 0.34, 260));
+  const spriteHeight = spriteWidth * 1.08;
+  const left = (window.innerWidth - spriteWidth) / 2;
+  const top = (window.innerHeight - spriteHeight) / 2 - window.innerHeight * 0.04;
+
+  generatedArStage.style.width = `${spriteWidth}px`;
+  generatedArStage.style.height = `${spriteHeight}px`;
+  applyGeneratedArStagePosition(left, top);
+  generatedArInteractionState = "camera-space";
+}
+
+function setHandTrackingStatus(message: string, isError = false) {
+  handTrackingStatus.textContent = message;
+  handTrackingStatus.dataset.state = isError ? "error" : "info";
+  handTrackingStatus.classList.toggle("hidden", !message);
+}
+
+function beginGeneratedArDrag(x: number, y: number) {
+  if (generatedArStage.classList.contains("hidden")) {
+    return;
+  }
+
+  const { width, height } = getGeneratedArStageSize();
+  generatedArDragActive = true;
+  generatedArDragOffsetX = width / 2;
+  generatedArDragOffsetY = height / 2;
+  generatedArInteractionState = "grabbed";
+  generatedArStage.classList.add("is-grabbed");
+  moveGeneratedArDrag(x, y);
+}
+
+function moveGeneratedArDrag(x: number, y: number) {
+  if (!generatedArDragActive) {
+    return;
+  }
+
+  applyGeneratedArStagePosition(x - generatedArDragOffsetX, y - generatedArDragOffsetY);
+}
+
+function endGeneratedArDrag() {
+  if (generatedArDragActive) {
+    generatedArInteractionState = "released";
+  }
+  generatedArDragActive = false;
+  generatedArStage.classList.remove("is-grabbed");
 }
 
 async function removeWhiteBackground(dataUrl: string) {
@@ -214,23 +295,8 @@ async function removeWhiteBackground(dataUrl: string) {
 function positionGeneratedArObject(
   anchorBox: GeneratedArObjectPayload["anchorBox"],
 ) {
-  const left = (anchorBox.x1 / 1000) * window.innerWidth;
-  const top = (anchorBox.y1 / 1000) * window.innerHeight;
-  const width = ((anchorBox.x2 - anchorBox.x1) / 1000) * window.innerWidth;
-  const height = ((anchorBox.y2 - anchorBox.y1) / 1000) * window.innerHeight;
-
-  const spriteWidth = Math.max(
-    120,
-    Math.min(width * 0.38, window.innerWidth * 0.26),
-  );
-  const spriteHeight = spriteWidth * 1.08;
-  const spriteLeft = left + width * 0.52 - spriteWidth / 2;
-  const spriteTop = top + height * 0.2 - spriteHeight * 0.45;
-
-  generatedArStage.style.left = `${spriteLeft}px`;
-  generatedArStage.style.top = `${spriteTop}px`;
-  generatedArStage.style.width = `${spriteWidth}px`;
-  generatedArStage.style.height = `${spriteHeight}px`;
+  void anchorBox;
+  centerGeneratedArObject();
 }
 
 async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
@@ -249,12 +315,7 @@ async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
   cleanedSpriteCache.set(payload.imageDataUrl, cleanedDataUrl);
   generatedArImage.src = cleanedDataUrl;
   generatedArImage.alt = payload.objectName;
-
-  if (generatedArRefreshInterval === null) {
-    generatedArRefreshInterval = window.setInterval(() => {
-      socket.emit("request-ar-anchor-refresh");
-    }, 1800);
-  }
+  endGeneratedArDrag();
 }
 
 function renderArOverlay(payload: ArOverlayPayload) {
@@ -477,23 +538,50 @@ function handle_audio_feed(data: ArrayBuffer) {
   socket.emit("audio-chunk", data);
 }
 
-function main() {
+async function main() {
   indicator.setStatus("pending");
+  if (!document.body.contains(handTrackingStatus)) {
+    handTrackingStatus.className = "hand-tracking-status hidden";
+    document.body.appendChild(handTrackingStatus);
+  }
+
+  setHandTrackingStatus("Starting camera...");
   // initialize webcam audio and video streams
   const playback_streams = new WebcamAudioVideoStream(video_playback!, {
     onVideoFrame: handle_video_feed,
     onAudioData: handle_audio_feed,
   });
-  playback_streams.start();
+  await playback_streams.start();
+  setHandTrackingStatus("Hand tracking is loading...");
+
+  if (!handTracker) {
+    handTracker = new HandTracker(video_playback!, {
+      onPinchStart: beginGeneratedArDrag,
+      onPinchMove: moveGeneratedArDrag,
+      onPinchEnd: endGeneratedArDrag,
+      onReady: () => {
+        setHandTrackingStatus("Pinch anywhere to grab the object.");
+        window.setTimeout(() => setHandTrackingStatus(""), 2200);
+      },
+      onError: (message) => {
+        setHandTrackingStatus(`Hand tracking unavailable: ${message}`, true);
+      },
+    });
+  }
+
+  void handTracker.start();
   show_ui();
 }
 
 overlay_button.addEventListener("click", () => {
-  main();
+  void main();
 });
 
 window.addEventListener("resize", () => {
   if (!generatedArStage.classList.contains("hidden")) {
-    socket.emit("request-ar-anchor-refresh");
+    applyGeneratedArStagePosition(
+      generatedArStage.offsetLeft,
+      generatedArStage.offsetTop,
+    );
   }
 });

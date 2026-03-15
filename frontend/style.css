@@ -31,6 +31,32 @@ body, html {
     z-index: 999;
 }
 
+.hand-tracking-status {
+    position: fixed;
+    left: 50%;
+    bottom: 120px;
+    transform: translateX(-50%);
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(12, 16, 26, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #f4f7fb;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: center;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+    z-index: 1010;
+}
+
+.hand-tracking-status[data-state="error"] {
+    background: rgba(75, 20, 28, 0.9);
+    border-color: rgba(255, 130, 130, 0.34);
+}
+
 #ar-container {
     position: fixed;
     inset: 0;
@@ -153,6 +179,12 @@ body, html {
     height: 220px;
     transform-origin: center bottom;
     will-change: transform, left, top, width, height;
+    transition: filter 120ms ease, transform 120ms ease;
+}
+
+.generated-ar-stage.is-grabbed {
+    transform: scale(1.04);
+    filter: drop-shadow(0 14px 30px rgba(255, 255, 255, 0.22));
 }
 
 .generated-ar-shadow {

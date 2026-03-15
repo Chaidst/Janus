@@ -53,7 +53,11 @@ class WebcamAudioVideoStream {
   async start(): Promise<MediaStream> {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: true,
       });
 
