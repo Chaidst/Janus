@@ -19,6 +19,8 @@ type HandTrackerCallbacks = {
   onPinchStart?: (x: number, y: number) => void;
   onPinchMove?: (x: number, y: number) => void;
   onPinchEnd?: () => void;
+  onReady?: () => void;
+  onError?: (message: string) => void;
 };
 
 declare global {
@@ -92,7 +94,9 @@ class HandTracker {
 
     this.initializationPromise = (async () => {
       if (!window.FilesetResolver || !window.HandLandmarker) {
-        console.warn("MediaPipe vision bundle is unavailable.");
+        const message = "MediaPipe vision bundle is unavailable.";
+        console.warn(message);
+        this.callbacks.onError?.(message);
         return;
       }
 
@@ -100,26 +104,41 @@ class HandTracker {
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
       );
 
-      this.handLandmarker = await window.HandLandmarker.createFromOptions(
-        vision,
-        {
-          baseOptions: {
-            modelAssetPath: MODEL_ASSET_PATH,
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.55,
-          minHandPresenceConfidence: 0.55,
-          minTrackingConfidence: 0.55,
-        },
-      );
+      this.handLandmarker = await this.createHandLandmarker(vision);
+      this.callbacks.onReady?.();
     })();
 
     try {
       await this.initializationPromise;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to initialize hand tracking.";
+      console.warn("Hand tracker initialization failed:", error);
+      this.callbacks.onError?.(message);
     } finally {
       this.initializationPromise = null;
+    }
+  }
+
+  private async createHandLandmarker(vision: unknown) {
+    const create = (delegate: "GPU" | "CPU") =>
+      window.HandLandmarker!.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: MODEL_ASSET_PATH,
+          delegate,
+        },
+        runningMode: "VIDEO",
+        numHands: 2,
+        minHandDetectionConfidence: 0.45,
+        minHandPresenceConfidence: 0.45,
+        minTrackingConfidence: 0.45,
+      });
+
+    try {
+      return await create("GPU");
+    } catch (error) {
+      console.warn("GPU hand tracking init failed, retrying on CPU:", error);
+      return create("CPU");
     }
   }
 
@@ -190,6 +209,7 @@ class HandTracker {
     if (!this.pinchActive && pinchDistance <= PINCH_START_THRESHOLD) {
       this.pinchActive = true;
       this.callbacks.onPinchStart?.(midpoint.x, midpoint.y);
+      this.callbacks.onPinchMove?.(midpoint.x, midpoint.y);
       return;
     }
 
