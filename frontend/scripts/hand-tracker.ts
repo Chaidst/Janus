@@ -23,6 +23,7 @@ type HandLandmarkerModule = {
 type HandLandmarkerInstance = {
   detectForVideo(
     video: HTMLVideoElement,
+    timestampMs: number,
   ): HandLandmarkerResult;
   setOptions?(options: Record<string, unknown>): Promise<void> | void;
 };
@@ -51,6 +52,7 @@ class HandTracker {
   private isRunning = false;
   private pinchActive = false;
   private lastVideoTime = -1;
+  private lastProcessedTimestampMs = -1;
   private initializationPromise: Promise<void> | null = null;
 
   constructor(video: HTMLVideoElement, callbacks: HandTrackerCallbacks = {}) {
@@ -189,13 +191,27 @@ class HandTracker {
       this.video.videoWidth > 0 &&
       this.video.currentTime !== this.lastVideoTime
     ) {
-      const result = this.handLandmarker.detectForVideo(this.video);
+      const result = this.handLandmarker.detectForVideo(
+        this.video,
+        this.getNextTimestampMs(),
+      );
       this.lastVideoTime = this.video.currentTime;
       this.handleResult(result);
     }
 
     this.animationFrameId = window.requestAnimationFrame(this.processFrame);
   };
+
+  private getNextTimestampMs() {
+    const now = Math.floor(performance.now());
+    const nextTimestamp =
+      now <= this.lastProcessedTimestampMs
+        ? this.lastProcessedTimestampMs + 1
+        : now;
+
+    this.lastProcessedTimestampMs = nextTimestamp;
+    return nextTimestamp;
+  }
 
   private handleResult(result: HandLandmarkerResult) {
     const hand = result.landmarks?.[0];
