@@ -1,84 +1,67 @@
-import { IndicatorLight } from "./utils.js";
-import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js";
+import { IndicatorLight } from "./utils.js"
+import { WebcamAudioVideoStream } from "./webcam-audio-video-stream.js"
 //import { SceneInterpreter } from "./scene-interpreter.js"
 
 declare var io: any;
 
-const overlay_button =
-  document.querySelector<HTMLButtonElement>("#overlay-button")!;
-const video_playback =
-  document.querySelector<HTMLVideoElement>("#video-playback")!;
-const activityBanner =
-  document.querySelector<HTMLDivElement>("#activity-banner")!;
-const arFocusRing = document.querySelector<HTMLDivElement>("#ar-focus-ring")!;
-const arOverlayCard =
-  document.querySelector<HTMLDivElement>("#ar-overlay-card")!;
-const arOverlayBadge =
-  document.querySelector<HTMLDivElement>("#ar-overlay-badge")!;
-const arOverlayTitle =
-  document.querySelector<HTMLDivElement>("#ar-overlay-title")!;
-const arOverlaySubtitle = document.querySelector<HTMLDivElement>(
-  "#ar-overlay-subtitle",
-)!;
-const arOverlayItems =
-  document.querySelector<HTMLDivElement>("#ar-overlay-items")!;
-const arOverlayPrompt =
-  document.querySelector<HTMLDivElement>("#ar-overlay-prompt")!;
-const generatedArStage = document.querySelector<HTMLDivElement>(
-  "#generated-ar-stage",
-)!;
-const generatedArImage = document.querySelector<HTMLImageElement>(
-  "#generated-ar-image",
-)!;
-const generatedArShadow = document.querySelector<HTMLDivElement>(
-  "#generated-ar-shadow",
-)!;
-const celebrationLayer =
-  document.querySelector<HTMLDivElement>("#celebration-layer")!;
+const overlay_button = document.querySelector<HTMLButtonElement>("#overlay-button");
+const video_playback = document.querySelector<HTMLVideoElement>("#video-playback");
+const activityBanner = document.querySelector<HTMLDivElement>("#activity-banner");
+const arFocusRing = document.querySelector<HTMLDivElement>("#ar-focus-ring");
+const arOverlayCard = document.querySelector<HTMLDivElement>("#ar-overlay-card");
+const arOverlayBadge = document.querySelector<HTMLDivElement>("#ar-overlay-badge");
+const arOverlayTitle = document.querySelector<HTMLDivElement>("#ar-overlay-title");
+const arOverlaySubtitle = document.querySelector<HTMLDivElement>("#ar-overlay-subtitle");
+const arOverlayItems = document.querySelector<HTMLDivElement>("#ar-overlay-items");
+const arOverlayPrompt = document.querySelector<HTMLDivElement>("#ar-overlay-prompt");
+const generatedArStage = document.querySelector<HTMLDivElement>("#generated-ar-stage");
+const generatedArImage = document.querySelector<HTMLImageElement>("#generated-ar-image");
+const generatedArShadow = document.querySelector<HTMLDivElement>("#generated-ar-shadow");
+const celebrationLayer = document.querySelector<HTMLDivElement>("#celebration-layer");
 
 type ArOverlayPayload = {
-  mode: "teaching" | "hunt" | "success";
-  badge: string;
-  title: string;
-  subtitle?: string;
-  prompt?: string;
-  accent?: string;
-  items?: string[];
-  celebration?: boolean;
+    mode: 'teaching' | 'hunt' | 'success';
+    badge: string;
+    title: string;
+    subtitle?: string;
+    prompt?: string;
+    accent?: string;
+    items?: string[];
+    celebration?: boolean;
 };
 
 type GeneratedArObjectPayload = {
-  objectName: string;
-  anchorTarget: string;
-  imageDataUrl: string;
-  anchorBox: {
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-  };
-  title: string;
-  prompt?: string;
-  accent: string;
+    objectName: string;
+    anchorTarget: string;
+    imageDataUrl: string;
+    anchorBox: {
+        x1: number;
+        y1: number;
+        x2: number;
+        y2: number;
+    };
+    title: string;
+    prompt?: string;
+    accent: string;
 };
 
 if (
-  !overlay_button ||
-  !video_playback ||
-  !activityBanner ||
-  !arFocusRing ||
-  !arOverlayCard ||
-  !arOverlayBadge ||
-  !arOverlayTitle ||
-  !arOverlaySubtitle ||
-  !arOverlayItems ||
-  !arOverlayPrompt ||
-  !generatedArStage ||
-  !generatedArImage ||
-  !generatedArShadow ||
-  !celebrationLayer
+    !overlay_button ||
+    !video_playback ||
+    !activityBanner ||
+    !arFocusRing ||
+    !arOverlayCard ||
+    !arOverlayBadge ||
+    !arOverlayTitle ||
+    !arOverlaySubtitle ||
+    !arOverlayItems ||
+    !arOverlayPrompt ||
+    !generatedArStage ||
+    !generatedArImage ||
+    !generatedArShadow ||
+    !celebrationLayer
 ) {
-  throw new Error("Required DOM elements not found");
+    throw new Error("Required DOM elements not found");
 }
 
 const indicator = new IndicatorLight();
@@ -97,403 +80,392 @@ let generatedArProcessToken = 0;
 const cleanedSpriteCache = new Map<string, string>();
 
 function escapeHtml(value: string) {
-  const escapes: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  };
+    const escapes: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    };
 
-  return value.replace(
-    /[&<>"']/g,
-    (character) => escapes[character] || character,
-  );
+    return value.replace(/[&<>"']/g, (character) => escapes[character] || character);
 }
 
 function clearCelebration() {
-  if (celebrationTimeout !== null) {
-    window.clearTimeout(celebrationTimeout);
-    celebrationTimeout = null;
-  }
-  celebrationLayer.classList.add("hidden");
-  celebrationLayer.innerHTML = "";
+    if (celebrationTimeout !== null) {
+        window.clearTimeout(celebrationTimeout);
+        celebrationTimeout = null;
+    }
+    celebrationLayer.classList.add('hidden');
+    celebrationLayer.innerHTML = '';
 }
 
-function triggerCelebration(accent = "#ffd166") {
-  clearCelebration();
-  celebrationLayer.classList.remove("hidden");
-
-  const burst = document.createElement("div");
-  burst.className = "celebration-burst";
-  burst.style.color = accent;
-  burst.style.setProperty("--accent", accent);
-  celebrationLayer.appendChild(burst);
-
-  for (let i = 0; i < 8; i++) {
-    const star = document.createElement("div");
-    star.className = "celebration-star";
-    star.style.left = `${35 + Math.random() * 30}%`;
-    star.style.top = `${35 + Math.random() * 30}%`;
-    star.style.background = accent;
-    star.style.setProperty("--tx", `${(Math.random() - 0.5) * 260}px`);
-    star.style.setProperty("--ty", `${(Math.random() - 0.5) * 220}px`);
-    celebrationLayer.appendChild(star);
-  }
-
-  celebrationTimeout = window.setTimeout(() => {
+function triggerCelebration(accent = '#ffd166') {
     clearCelebration();
-  }, 1600);
+    celebrationLayer.classList.remove('hidden');
+
+    const burst = document.createElement('div');
+    burst.className = 'celebration-burst';
+    burst.style.color = accent;
+    burst.style.setProperty('--accent', accent);
+    celebrationLayer.appendChild(burst);
+
+    for (let i = 0; i < 8; i++) {
+        const star = document.createElement('div');
+        star.className = 'celebration-star';
+        star.style.left = `${35 + Math.random() * 30}%`;
+        star.style.top = `${35 + Math.random() * 30}%`;
+        star.style.background = accent;
+        star.style.setProperty('--tx', `${(Math.random() - 0.5) * 260}px`);
+        star.style.setProperty('--ty', `${(Math.random() - 0.5) * 220}px`);
+        celebrationLayer.appendChild(star);
+    }
+
+    celebrationTimeout = window.setTimeout(() => {
+        clearCelebration();
+    }, 1600);
 }
 
 function clearArOverlay() {
-  activityBanner.textContent = "";
-  activityBanner.classList.add("hidden");
-  arFocusRing.classList.add("hidden");
-  arOverlayCard.classList.add("hidden");
-  arOverlayCard.style.removeProperty("border-color");
-  arOverlayCard.style.removeProperty("box-shadow");
-  arOverlayBadge.textContent = "";
-  arOverlayTitle.textContent = "";
-  arOverlaySubtitle.textContent = "";
-  arOverlayPrompt.textContent = "";
-  arOverlayItems.innerHTML = "";
-  clearCelebration();
+    activityBanner.textContent = '';
+    activityBanner.classList.add('hidden');
+    arFocusRing.classList.add('hidden');
+    arOverlayCard.classList.add('hidden');
+    arOverlayCard.style.removeProperty('border-color');
+    arOverlayCard.style.removeProperty('box-shadow');
+    arOverlayBadge.textContent = '';
+    arOverlayTitle.textContent = '';
+    arOverlaySubtitle.textContent = '';
+    arOverlayPrompt.textContent = '';
+    arOverlayItems.innerHTML = '';
+    clearCelebration();
 }
 
 function stopGeneratedArRefresh() {
-  if (generatedArRefreshInterval !== null) {
-    window.clearInterval(generatedArRefreshInterval);
-    generatedArRefreshInterval = null;
-  }
+    if (generatedArRefreshInterval !== null) {
+        window.clearInterval(generatedArRefreshInterval);
+        generatedArRefreshInterval = null;
+    }
 }
 
 function clearGeneratedArObject() {
-  stopGeneratedArRefresh();
-  generatedArStage.classList.add("hidden");
-  generatedArStage.style.removeProperty("left");
-  generatedArStage.style.removeProperty("top");
-  generatedArStage.style.removeProperty("width");
-  generatedArStage.style.removeProperty("height");
-  generatedArImage.src = "";
+    stopGeneratedArRefresh();
+    generatedArStage.classList.add('hidden');
+    generatedArStage.style.removeProperty('left');
+    generatedArStage.style.removeProperty('top');
+    generatedArStage.style.removeProperty('width');
+    generatedArStage.style.removeProperty('height');
+    generatedArImage.src = '';
 }
 
 async function removeWhiteBackground(dataUrl: string) {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
 
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return dataUrl;
-  }
-
-  context.drawImage(image, 0, 0);
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const red = data[i] ?? 0;
-    const green = data[i + 1] ?? 0;
-    const blue = data[i + 2] ?? 0;
-    if (red > 245 && green > 245 && blue > 245) {
-      data[i + 3] = 0;
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+        return dataUrl;
     }
-  }
 
-  context.putImageData(imageData, 0, 0);
-  return canvas.toDataURL("image/png");
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+        const red = data[i] ?? 0;
+        const green = data[i + 1] ?? 0;
+        const blue = data[i + 2] ?? 0;
+        if (red > 245 && green > 245 && blue > 245) {
+            data[i + 3] = 0;
+        }
+    }
+
+    context.putImageData(imageData, 0, 0);
+    return canvas.toDataURL('image/png');
 }
 
-function positionGeneratedArObject(
-  anchorBox: GeneratedArObjectPayload["anchorBox"],
-) {
-  const left = (anchorBox.x1 / 1000) * window.innerWidth;
-  const top = (anchorBox.y1 / 1000) * window.innerHeight;
-  const width = ((anchorBox.x2 - anchorBox.x1) / 1000) * window.innerWidth;
-  const height = ((anchorBox.y2 - anchorBox.y1) / 1000) * window.innerHeight;
+function positionGeneratedArObject(anchorBox: GeneratedArObjectPayload['anchorBox']) {
+    const left = (anchorBox.x1 / 1000) * window.innerWidth;
+    const top = (anchorBox.y1 / 1000) * window.innerHeight;
+    const width = ((anchorBox.x2 - anchorBox.x1) / 1000) * window.innerWidth;
+    const height = ((anchorBox.y2 - anchorBox.y1) / 1000) * window.innerHeight;
 
-  const spriteWidth = Math.max(
-    120,
-    Math.min(width * 0.38, window.innerWidth * 0.26),
-  );
-  const spriteHeight = spriteWidth * 1.08;
-  const spriteLeft = left + width * 0.52 - spriteWidth / 2;
-  const spriteTop = top + height * 0.2 - spriteHeight * 0.45;
+    const spriteWidth = Math.max(120, Math.min(width * 0.38, window.innerWidth * 0.26));
+    const spriteHeight = spriteWidth * 1.08;
+    const spriteLeft = left + (width * 0.52) - (spriteWidth / 2);
+    const spriteTop = top + (height * 0.2) - (spriteHeight * 0.45);
 
-  generatedArStage.style.left = `${spriteLeft}px`;
-  generatedArStage.style.top = `${spriteTop}px`;
-  generatedArStage.style.width = `${spriteWidth}px`;
-  generatedArStage.style.height = `${spriteHeight}px`;
+    generatedArStage.style.left = `${spriteLeft}px`;
+    generatedArStage.style.top = `${spriteTop}px`;
+    generatedArStage.style.width = `${spriteWidth}px`;
+    generatedArStage.style.height = `${spriteHeight}px`;
 }
 
 async function renderGeneratedArObject(payload: GeneratedArObjectPayload) {
-  const token = ++generatedArProcessToken;
-  positionGeneratedArObject(payload.anchorBox);
-  generatedArShadow.style.background = `radial-gradient(circle, rgba(20, 18, 16, 0.34) 0%, ${payload.accent}22 38%, rgba(20, 18, 16, 0) 74%)`;
-  generatedArStage.classList.remove("hidden");
+    const token = ++generatedArProcessToken;
+    positionGeneratedArObject(payload.anchorBox);
+    generatedArShadow.style.background = `radial-gradient(circle, rgba(20, 18, 16, 0.34) 0%, ${payload.accent}22 38%, rgba(20, 18, 16, 0) 74%)`;
+    generatedArStage.classList.remove('hidden');
 
-  const cleanedDataUrl =
-    cleanedSpriteCache.get(payload.imageDataUrl) ||
-    (await removeWhiteBackground(payload.imageDataUrl));
-  if (token !== generatedArProcessToken) {
-    return;
-  }
+    const cleanedDataUrl = cleanedSpriteCache.get(payload.imageDataUrl) || await removeWhiteBackground(payload.imageDataUrl);
+    if (token !== generatedArProcessToken) {
+        return;
+    }
 
-  cleanedSpriteCache.set(payload.imageDataUrl, cleanedDataUrl);
-  generatedArImage.src = cleanedDataUrl;
-  generatedArImage.alt = payload.objectName;
+    cleanedSpriteCache.set(payload.imageDataUrl, cleanedDataUrl);
+    generatedArImage.src = cleanedDataUrl;
+    generatedArImage.alt = payload.objectName;
 
-  if (generatedArRefreshInterval === null) {
-    generatedArRefreshInterval = window.setInterval(() => {
-      socket.emit("request-ar-anchor-refresh");
-    }, 1800);
-  }
+    if (generatedArRefreshInterval === null) {
+        generatedArRefreshInterval = window.setInterval(() => {
+            socket.emit('request-ar-anchor-refresh');
+        }, 1800);
+    }
 }
 
 function renderArOverlay(payload: ArOverlayPayload) {
-  const accent = payload.accent || "#b794f4";
-  activityBanner.textContent =
-    payload.mode === "hunt" ? payload.prompt || payload.title : payload.badge;
-  activityBanner.classList.remove("hidden");
+    const accent = payload.accent || '#b794f4';
+    activityBanner.textContent = payload.mode === 'hunt'
+        ? payload.prompt || payload.title
+        : payload.badge;
+    activityBanner.classList.remove('hidden');
 
-  arFocusRing.classList.toggle("hidden", payload.mode === "success");
-  arFocusRing.style.borderColor = accent;
-  arFocusRing.style.boxShadow = `0 0 0 12px rgba(255,255,255,0.08), 0 0 80px ${accent}55`;
+    arFocusRing.classList.toggle('hidden', payload.mode === 'success');
+    arFocusRing.style.borderColor = accent;
+    arFocusRing.style.boxShadow = `0 0 0 12px rgba(255,255,255,0.08), 0 0 80px ${accent}55`;
 
-  arOverlayCard.classList.remove("hidden");
-  arOverlayCard.style.borderColor = `${accent}66`;
-  arOverlayCard.style.boxShadow = `0 18px 48px rgba(0, 0, 0, 0.42), 0 0 0 1px ${accent}22`;
-  arOverlayBadge.textContent = payload.badge;
-  arOverlayTitle.textContent = payload.title;
-  arOverlaySubtitle.textContent = payload.subtitle || "";
-  arOverlayPrompt.textContent = payload.prompt || "";
+    arOverlayCard.classList.remove('hidden');
+    arOverlayCard.style.borderColor = `${accent}66`;
+    arOverlayCard.style.boxShadow = `0 18px 48px rgba(0, 0, 0, 0.42), 0 0 0 1px ${accent}22`;
+    arOverlayBadge.textContent = payload.badge;
+    arOverlayTitle.textContent = payload.title;
+    arOverlaySubtitle.textContent = payload.subtitle || '';
+    arOverlayPrompt.textContent = payload.prompt || '';
 
-  arOverlayItems.innerHTML = "";
-  for (const item of payload.items || []) {
-    const chip = document.createElement("div");
-    chip.className = "ar-chip";
-    chip.textContent = item;
-    chip.style.background = `${accent}22`;
-    chip.style.border = `1px solid ${accent}55`;
-    arOverlayItems.appendChild(chip);
-  }
+    arOverlayItems.innerHTML = '';
+    for (const item of payload.items || []) {
+        const chip = document.createElement('div');
+        chip.className = 'ar-chip';
+        chip.textContent = item;
+        chip.style.background = `${accent}22`;
+        chip.style.border = `1px solid ${accent}55`;
+        arOverlayItems.appendChild(chip);
+    }
 
-  if (payload.celebration) {
-    triggerCelebration(accent);
-  } else {
-    clearCelebration();
-  }
+    if (payload.celebration) {
+        triggerCelebration(accent);
+    } else {
+        clearCelebration();
+    }
 }
 
 async function playNextAudio() {
-  if (audioQueue.length === 0) {
-    isPlaying = false;
-    return;
-  }
-
-  isPlaying = true;
-  const arrayBuffer = audioQueue.shift();
-  if (!arrayBuffer) return;
-  const pcmData = new Int16Array(arrayBuffer);
-
-  if (!audioContext) {
-    audioContext = new (
-      window.AudioContext || (window as any).webkitAudioContext
-    )({
-      sampleRate: 24000, // Gemini output rate
-    });
-    nextStartTime = audioContext.currentTime;
-  }
-
-  // Convert Int16 PCM to Float32 for AudioContext
-  const float32Data = new Float32Array(pcmData.length);
-  for (let i = 0; i < pcmData.length; i++) {
-    const sample = pcmData[i];
-    if (sample !== undefined) {
-      float32Data[i] = sample / 0x8000;
+    if (audioQueue.length === 0) {
+        isPlaying = false;
+        return;
     }
-  }
 
-  const audioBuffer = audioContext.createBuffer(1, float32Data.length, 24000);
-  audioBuffer.getChannelData(0).set(float32Data);
+    isPlaying = true;
+    const arrayBuffer = audioQueue.shift();
+    if (!arrayBuffer) return;
+    const pcmData = new Int16Array(arrayBuffer);
 
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioContext.destination);
-  activeSources.push(source);
-
-  // Schedule playback for gapless transition
-  const currentTime = audioContext.currentTime;
-  if (nextStartTime < currentTime) {
-    nextStartTime = currentTime;
-  }
-
-  source.start(nextStartTime);
-  nextStartTime += audioBuffer.duration;
-
-  source.onended = () => {
-    const index = activeSources.indexOf(source);
-    if (index > -1) {
-      activeSources.splice(index, 1);
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+            sampleRate: 24000 // Gemini output rate
+        });
+        nextStartTime = audioContext.currentTime;
     }
-  };
 
-  // Continue with next chunk as soon as possible (it will be scheduled)
-  setTimeout(playNextAudio, 0);
+    // Convert Int16 PCM to Float32 for AudioContext
+    const float32Data = new Float32Array(pcmData.length);
+    for (let i = 0; i < pcmData.length; i++) {
+        const sample = pcmData[i];
+        if (sample !== undefined) {
+            float32Data[i] = sample / 0x8000;
+        }
+    }
+
+    const audioBuffer = audioContext.createBuffer(1, float32Data.length, 24000);
+    audioBuffer.getChannelData(0).set(float32Data);
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    activeSources.push(source);
+
+    // Schedule playback for gapless transition
+    const currentTime = audioContext.currentTime;
+    if (nextStartTime < currentTime) {
+        nextStartTime = currentTime;
+    }
+
+    source.start(nextStartTime);
+    nextStartTime += audioBuffer.duration;
+
+    source.onended = () => {
+        const index = activeSources.indexOf(source);
+        if (index > -1) {
+            activeSources.splice(index, 1);
+        }
+    };
+
+    // Continue with next chunk as soon as possible (it will be scheduled)
+    setTimeout(playNextAudio, 0);
 }
 
-socket.on("audio-out", (data: ArrayBuffer) => {
-  audioQueue.push(data);
-  if (!isPlaying) {
-    playNextAudio();
-  }
-});
-
-socket.on("interrupted", () => {
-  audioQueue = [];
-  nextStartTime = 0;
-  activeSources.forEach((source) => {
-    try {
-      source.stop();
-    } catch (e) {
-      console.warn("Error stopping source:", e);
+socket.on('audio-out', (data: ArrayBuffer) => {
+    audioQueue.push(data);
+    if (!isPlaying) {
+        playNextAudio();
     }
-  });
-  activeSources = [];
-  isPlaying = false;
 });
 
-socket.on("transcription", (data: { type: string; text: string }) => {
-  console.log(`[${data.type}] ${data.text}`);
+socket.on('interrupted', () => {
+    audioQueue = [];
+    nextStartTime = 0;
+    activeSources.forEach(source => {
+        try {
+            source.stop();
+        } catch (e) {
+            console.warn("Error stopping source:", e);
+        }
+    });
+    activeSources = [];
+    isPlaying = false;
+});
+
+socket.on('transcription', (data: { type: string, text: string }) => {
+    console.log(`[${data.type}] ${data.text}`);
 });
 
 // ── Tool Call Handler ────────────────────────────────────────────────────────
-socket.on("tool-call", (data: { name: string; args: any }) => {
-  if (data.name === "show_visual") {
-    const args = data.args;
-    // Remove any existing popup first
-    const existing = document.querySelector(".media-popup");
-    if (existing) existing.remove();
+socket.on('tool-call', (data: { name: string; args: any }) => {
+    if (data.name === 'show_visual') {
+        const args = data.args;
+        // Remove any existing popup first
+        const existing = document.querySelector('.media-popup');
+        if (existing) existing.remove();
 
-    const popup = document.createElement("div");
-    popup.className = "media-popup";
+        const popup = document.createElement('div');
+        popup.className = 'media-popup';
 
-    if (args.type === "video" && args.videoId) {
-      const iframe = document.createElement("iframe");
-      iframe.src = `https://www.youtube.com/embed/${args.videoId}?autoplay=1&mute=1`;
-      iframe.allow = "autoplay; encrypted-media";
-      iframe.allowFullscreen = true;
-      popup.appendChild(iframe);
-    } else if (args.url) {
-      const img = document.createElement("img");
-      img.src = args.url;
-      img.alt = args.title;
-      popup.appendChild(img);
+        if (args.type === 'video' && args.videoId) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://www.youtube.com/embed/${args.videoId}?autoplay=1&mute=1`;
+            iframe.allow = 'autoplay; encrypted-media';
+            iframe.allowFullscreen = true;
+            popup.appendChild(iframe);
+        } else if (args.url) {
+            const img = document.createElement('img');
+            img.src = args.url;
+            img.alt = args.title;
+            popup.appendChild(img);
+        }
+
+        const title = document.createElement('div');
+        title.className = 'media-popup-title';
+        title.textContent = args.title;
+        popup.appendChild(title);
+
+        document.body.appendChild(popup);
+
+        // Auto-dismiss after 10 seconds
+        setTimeout(() => {
+            popup.classList.add('dismissing');
+            setTimeout(() => popup.remove(), 500);
+        }, 10000);
+        return;
     }
 
-    const title = document.createElement("div");
-    title.className = "media-popup-title";
-    title.textContent = args.title;
-    popup.appendChild(title);
-
-    document.body.appendChild(popup);
-
-    // Auto-dismiss after 10 seconds
-    setTimeout(() => {
-      popup.classList.add("dismissing");
-      setTimeout(() => popup.remove(), 500);
-    }, 10000);
-    return;
-  }
-
-  if (data.name === "ar_overlay") {
-    renderArOverlay(data.args as ArOverlayPayload);
-    return;
-  }
-
-  if (data.name === "clear_ar_overlay") {
-    clearArOverlay();
-    return;
-  }
-
-  if (data.name === "generated_ar_status") {
-    const args = data.args as { message?: string };
-    if (args.message) {
-      activityBanner.textContent = args.message;
-      activityBanner.classList.remove("hidden");
-    } else if (activityBanner.textContent?.includes("Making ")) {
-      activityBanner.textContent = "";
-      activityBanner.classList.add("hidden");
+    if (data.name === 'ar_overlay') {
+        renderArOverlay(data.args as ArOverlayPayload);
+        return;
     }
-    return;
-  }
 
-  if (data.name === "generated_ar_object") {
-    const payload = data.args as GeneratedArObjectPayload;
-    void renderGeneratedArObject(payload);
-    return;
-  }
+    if (data.name === 'clear_ar_overlay') {
+        clearArOverlay();
+        return;
+    }
 
-  if (data.name === "clear_generated_ar_object") {
-    clearGeneratedArObject();
-  }
+    if (data.name === 'generated_ar_status') {
+        const args = data.args as { message?: string };
+        if (args.message) {
+            activityBanner.textContent = args.message;
+            activityBanner.classList.remove('hidden');
+        } else if (activityBanner.textContent?.includes('Making ')) {
+            activityBanner.textContent = '';
+            activityBanner.classList.add('hidden');
+        }
+        return;
+    }
+
+    if (data.name === 'generated_ar_object') {
+        const payload = data.args as GeneratedArObjectPayload;
+        void renderGeneratedArObject(payload);
+        return;
+    }
+
+    if (data.name === 'clear_generated_ar_object') {
+        clearGeneratedArObject();
+    }
 });
 
 function show_ui() {
-  if (overlay_button) overlay_button.style.display = "none";
-  if (video_playback) video_playback.style.display = "block";
+    if (overlay_button) overlay_button.style.display = "none";
+    if (video_playback) video_playback.style.display = "block";
 }
 let ignore = false;
 let is_interpreting = false;
 async function handle_video_feed(data: string) {
-  // console.log("Received video frame.");
-  if (ignore) return;
-  socket.emit("video-frame", data);
+    // console.log("Received video frame.");
+    if (ignore) return;
+    socket.emit('video-frame', data);
 
-  // // Optional: Run local inference as well
-  // if (is_interpreting) return;
-  // is_interpreting = true;
-  //
-  // try {
-  //     const result = await interpreter.interpret(data);
-  //     if (result) {
-  //         console.log("ignoring");
-  //         ignore = true;
-  //     }
-  // } finally {
-  //     is_interpreting = false;
-  // }
+    // // Optional: Run local inference as well
+    // if (is_interpreting) return;
+    // is_interpreting = true;
+    //
+    // try {
+    //     const result = await interpreter.interpret(data);
+    //     if (result) {
+    //         console.log("ignoring");
+    //         ignore = true;
+    //     }
+    // } finally {
+    //     is_interpreting = false;
+    // }
 }
 
 function handle_audio_feed(data: ArrayBuffer) {
-  // console.log("Received audio chunk.");
-  socket.emit("audio-chunk", data);
+    // console.log("Received audio chunk.");
+    socket.emit('audio-chunk', data);
 }
 
 function main() {
-  indicator.setStatus("pending");
-  // initialize webcam audio and video streams
-  const playback_streams = new WebcamAudioVideoStream(video_playback, {
-    onVideoFrame: handle_video_feed,
-    onAudioData: handle_audio_feed,
-  });
-  playback_streams.start();
-  show_ui();
+    indicator.setStatus("pending");
+    // initialize webcam audio and video streams
+    const playback_streams = new WebcamAudioVideoStream(video_playback!, {
+        onVideoFrame: handle_video_feed,
+        onAudioData: handle_audio_feed
+    });
+    playback_streams.start();
+    show_ui();
 }
 
 overlay_button.addEventListener("click", () => {
-  main();
+    main();
 });
 
-window.addEventListener("resize", () => {
-  if (!generatedArStage.classList.contains("hidden")) {
-    socket.emit("request-ar-anchor-refresh");
-  }
+window.addEventListener('resize', () => {
+    if (!generatedArStage.classList.contains('hidden')) {
+        socket.emit('request-ar-anchor-refresh');
+    }
 });

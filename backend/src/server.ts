@@ -1,11 +1,11 @@
-import express from "express";
-import http from "http";
-import { Server } from "socket.io";
-import path from "path";
-import { GeminiInteractionSystem } from "./scripts/gemini-interactions-system.js";
-import { setupParentChatRoutes } from "./scripts/parent-chat.js";
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import path from 'path';
+import { GeminiInteractionSystem } from './scripts/gemini-interactions-system.js';
+import { setupParentChatRoutes } from './scripts/parent-chat.js';
 
-import { fileURLToPath } from "url";
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,27 +13,28 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
 });
 
 const PORT = process.env.PORT || 3000;
 
-const publicPath = path.join(__dirname, "../../frontend/dist");
+const publicPath = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(publicPath));
 
+
 // Fallback to serving the frontend folder for files not in dist (optional, for dev)
-if (process.env.NODE_ENV !== "production") {
-  app.use((req, res, next) => {
-    if (req.path.endsWith(".ts")) {
-      res.setHeader("Content-Type", "application/javascript");
-    }
-    next();
-  });
+if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+        if (req.path.endsWith('.ts')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+        next();
+    });
 }
-app.use(express.static(path.join(__dirname, "../../frontend")));
+app.use(express.static(path.join(__dirname, '../../frontend')));
 
 // Allow JSON body parsing
 app.use(express.json());
@@ -41,22 +42,22 @@ app.use(express.json());
 // Setup parent API routes
 setupParentChatRoutes(app);
 
-io.on("connection", (socket) => {
-  // note the gemini driver seat handles the socket lifetime for a particular user
-  if (process.env.USE_VERTEX) {
-    console.log("Using Vertex AI");
-    new GeminiInteractionSystem(process.env.API_KEY || "", socket, "vertex");
-  } else {
-    console.log("Using AI Studio");
-    new GeminiInteractionSystem(process.env.API_KEY || "", socket);
-  }
+io.on('connection', (socket) => {
+    // note the gemini driver seat handles the socket lifetime for a particular user
+    if (process.env.USE_VERTEX) {
+        console.log("Using Vertex AI");
+        new GeminiInteractionSystem(process.env.API_KEY || "", socket, "vertex");
+    } else {
+        console.log("Using AI Studio");
+        new GeminiInteractionSystem(process.env.API_KEY || "", socket);
+    }
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
-  console.log("Connected to socket.io");
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+    });
+    console.log("Connected to socket.io");
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
