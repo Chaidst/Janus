@@ -45,6 +45,35 @@ require_command() {
   fi
 }
 
+get_active_project() {
+  local active_project
+
+  active_project="$(gcloud config get-value project 2>/dev/null || true)"
+  if [[ -z "${active_project}" || "${active_project}" == "(unset)" ]]; then
+    return 1
+  fi
+
+  printf '%s' "${active_project}"
+}
+
+wait_for_service_account() {
+  local service_account_email="$1"
+  local attempt
+
+  for attempt in {1..12}; do
+    if gcloud iam service-accounts describe "${service_account_email}" \
+      --project="${PROJECT_ID}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 5
+  done
+
+  printf 'Error: service account %s was created but is not yet available. Try rerunning in a minute.\n' \
+    "${service_account_email}" >&2
+  exit 1
+}
+
 csv_join() {
   local IFS=,
   printf '%s' "$*"
@@ -64,6 +93,74 @@ generate_default_project_id() {
   fi
 
   printf 'janus-%s-%s' "${account_prefix}" "$(date +%y%m%d%H%M%S)"
+}
+
+project_billing_account() {
+  local project_id="$1"
+
+  gcloud billing projects describe "${project_id}" \
+    --format='value(billingAccountName)' 2>/dev/null || true
+}
+
+project_has_billing() {
+  local project_id="$1"
+
+  [[ -n "$(project_billing_account "${project_id}")" ]]
+}
+
+detect_billed_project() {
+  local billing_account="$1"
+  local exclude_project="${2:-}"
+  local project_id
+
+  while IFS= read -r project_id; do
+    if [[ -z "${project_id}" || "${project_id}" == "${exclude_project}" ]]; then
+      continue
+    fi
+
+    if gcloud projects describe "${project_id}" >/dev/null 2>&1; then
+      printf '%s' "${project_id}"
+      return 0
+    fi
+  done < <(
+    gcloud billing projects list \
+      --billing-account="${billing_account}" \
+      --format='value(projectId)' 2>/dev/null
+  )
+
+  return 1
+}
+
+resolve_default_project_id() {
+  local active_project
+  local selected_billing_account
+  local billed_project
+
+  active_project="$(get_active_project || true)"
+  if [[ -n "${active_project}" ]] && project_has_billing "${active_project}"; then
+    PROJECT_ID_SOURCE="active"
+    printf '%s' "${active_project}"
+    return 0
+  fi
+
+  selected_billing_account="$(detect_billing_account || true)"
+  if [[ -n "${selected_billing_account}" ]]; then
+    billed_project="$(detect_billed_project "${selected_billing_account}" "${active_project}" || true)"
+    if [[ -n "${billed_project}" ]]; then
+      PROJECT_ID_SOURCE="billing"
+      printf '%s' "${billed_project}"
+      return 0
+    fi
+  fi
+
+  if [[ -n "${active_project}" ]]; then
+    PROJECT_ID_SOURCE="active"
+    printf '%s' "${active_project}"
+    return 0
+  fi
+
+  PROJECT_ID_SOURCE="generated"
+  generate_default_project_id
 }
 
 refresh_derived_config() {
@@ -140,6 +237,7 @@ detect_billing_account() {
 ensure_project_billing() {
   local current_billing_account
   local selected_billing_account
+  local link_output
 
   current_billing_account="$(gcloud billing projects describe "${PROJECT_ID}" \
     --format='value(billingAccountName)' 2>/dev/null || true)"
@@ -156,13 +254,36 @@ ensure_project_billing() {
     exit 1
   fi
 
-  gcloud billing projects link "${PROJECT_ID}" \
-    --billing-account="${selected_billing_account}" >/dev/null
+  if link_output="$(gcloud billing projects link "${PROJECT_ID}" \
+    --billing-account="${selected_billing_account}" 2>&1)"; then
+    return
+  fi
+
+  printf '%s\n' "${link_output}" >&2
+  if [[ "${link_output}" == *"Cloud billing quota exceeded"* ]]; then
+    printf 'Error: billing account %s cannot link another project right now. Set PROJECT_ID to an existing billed project or request a billing quota increase.\n' \
+      "${selected_billing_account}" >&2
+  fi
+
+  exit 1
 }
 
 ensure_project_role() {
   local member="$1"
   local role="$2"
+  local attempt
+
+  for attempt in {1..6}; do
+    if gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+      --member="${member}" \
+      --role="${role}" \
+      --condition=None \
+      --quiet >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 5
+  done
 
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="${member}" \
@@ -198,6 +319,8 @@ ensure_service_account() {
   gcloud iam service-accounts create "${RUNTIME_SERVICE_ACCOUNT_NAME}" \
     --display-name="${RUNTIME_SERVICE_ACCOUNT_DISPLAY_NAME}" \
     --project="${PROJECT_ID}"
+
+  wait_for_service_account "${service_account_email}"
 }
 
 service_account_exists() {
@@ -270,8 +393,20 @@ main() {
   require_command grep
 
   if [[ -z "${PROJECT_ID}" ]]; then
-    PROJECT_ID="$(generate_default_project_id)"
-    log "No PROJECT_ID provided; using generated project ${PROJECT_ID}"
+    PROJECT_ID_SOURCE=""
+    PROJECT_ID="$(resolve_default_project_id)"
+
+    case "${PROJECT_ID_SOURCE}" in
+      active)
+        log "No PROJECT_ID provided; using existing gcloud project ${PROJECT_ID}"
+        ;;
+      billing)
+        log "No PROJECT_ID provided; using existing billing-enabled project ${PROJECT_ID}"
+        ;;
+      *)
+        log "No PROJECT_ID provided; using generated project ${PROJECT_ID}"
+        ;;
+    esac
   fi
 
   refresh_derived_config

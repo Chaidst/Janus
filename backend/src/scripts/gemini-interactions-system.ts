@@ -10,7 +10,10 @@ import {
   type GenerateContentParameters,
   type GenerateContentResponse,
 } from "@google/genai";
-import { MediaSearchService, type ImageResult } from "./media-search-service.js";
+import {
+  MediaSearchService,
+  type ImageResult,
+} from "./media-search-service.js";
 import { db } from "./firebase.js";
 import { FieldValue } from "firebase-admin/firestore";
 import ffmpegPath from "ffmpeg-static";
@@ -242,7 +245,7 @@ export class GeminiInteractionSystem {
 
   private static readonly CONTEXT_HISTORY_MS = 10000;
   private static readonly SILENCE_TIMEOUT_MS = 3000;
-  private static readonly POST_SPEECH_QUIET_WINDOW_MS = 1000;
+  private static readonly POST_SPEECH_QUIET_WINDOW_MS = 1500;
   private static readonly USER_SPEECH_ENERGY_THRESHOLD = 900;
   private static readonly USER_SPEECH_HOLD_MS = 900;
   private static readonly AUDIO_SAMPLE_RATE = 16000;
@@ -1012,7 +1015,9 @@ ${transcript}`,
         }
 
         // Search returned nothing — generate with Imagen as last resort
-        console.log(`Search found nothing for "${query}" — falling back to Imagen`);
+        console.log(
+          `Search found nothing for "${query}" — falling back to Imagen`,
+        );
         try {
           const dataUrl = await this.generateVisualImage(query);
           this.socket.emit("tool-call", {

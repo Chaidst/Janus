@@ -51,7 +51,7 @@ type SessionListItem = {
   alertCount?: number;
   messages?: SessionMessage[];
 };
-type AlertKind = "distress" | "safety";
+type AlertKind = "distress" | "safety" | "at-risk";
 type ViewMode = "all" | "alerts";
 type AtRiskEvent = {
   timestamp: number;
@@ -242,13 +242,15 @@ function normalizeAlerts(
 ) {
   const normalizedAlerts: SessionAlert[] = [];
 
-  // Process existing alerts
+  // Process existing alerts - filter out safety alerts
   if (Array.isArray(alerts)) {
     normalizedAlerts.push(
-      ...alerts.map((alert) => ({
-        ...alert,
-        expanded: true,
-      })),
+      ...alerts
+        .filter((alert) => alert.kind !== "safety")
+        .map((alert) => ({
+          ...alert,
+          expanded: true,
+        })),
     );
   }
 
@@ -263,7 +265,7 @@ function normalizeAlerts(
 
       normalizedAlerts.push({
         id: `at-risk-${event.timestamp}-${index}`,
-        kind: "safety",
+        kind: "at-risk",
         title: "At-Risk Behavior Detected",
         label: timeLabel,
         summary: event.explanation,
