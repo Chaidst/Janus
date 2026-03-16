@@ -18,6 +18,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google-cloud/discoveryengine": "^2.5.3",
     "@google/genai": "^1.44.0",
     "@huggingface/transformers": "^3.8.1",
     "express": "^5.2.1",
