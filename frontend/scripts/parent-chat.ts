@@ -1,11 +1,19 @@
 const sessionRoot = document.getElementById("session-root") as HTMLDivElement;
 const chatInput = document.getElementById("chat-input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
-const assistantDock = document.getElementById("assistant-dock") as HTMLDivElement;
-const assistantThread = document.getElementById("assistant-thread") as HTMLDivElement;
-const assistantCloseButton = document.getElementById("assistant-close-button") as HTMLButtonElement;
+const assistantDock = document.getElementById(
+  "assistant-dock",
+) as HTMLDivElement;
+const assistantThread = document.getElementById(
+  "assistant-thread",
+) as HTMLDivElement;
+const assistantCloseButton = document.getElementById(
+  "assistant-close-button",
+) as HTMLButtonElement;
 const clipModal = document.getElementById("clip-modal") as HTMLDivElement;
-const profileMenuButton = document.getElementById("profile-menu-button") as HTMLButtonElement;
+const profileMenuButton = document.getElementById(
+  "profile-menu-button",
+) as HTMLButtonElement;
 const profileMenu = document.getElementById("profile-menu") as HTMLDivElement;
 
 type ConversationMessage = { role: "user" | "model"; text: string };
@@ -69,6 +77,7 @@ let overlaySyncFrame: number | null = null;
 let activeSessionId: string | null = null;
 let loadingSessionId: string | null = null;
 let sessionLoadError: string | null = null;
+let showMobileDetail = false;
 
 function escapeHtml(value: string) {
   const escapes: Record<string, string> = {
@@ -79,7 +88,10 @@ function escapeHtml(value: string) {
     "'": "&#39;",
   };
 
-  return value.replace(/[&<>"']/g, (character) => escapes[character] || character);
+  return value.replace(
+    /[&<>"']/g,
+    (character) => escapes[character] || character,
+  );
 }
 
 function childNameForSession(session: { childName?: string }) {
@@ -122,7 +134,10 @@ function formatSessionDate(timestamp: number) {
   });
 }
 
-function messageCountForSession(session: { messages?: SessionMessage[]; messageCount?: number }) {
+function messageCountForSession(session: {
+  messages?: SessionMessage[];
+  messageCount?: number;
+}) {
   if (typeof session.messageCount === "number") {
     return session.messageCount;
   }
@@ -147,15 +162,27 @@ function computeDurationLabel(session: {
   const messages = session.messages || [];
   const timestamps = messages
     .map((message) => message.timestamp)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isFinite(value),
+    );
 
   if (timestamps.length >= 2) {
-    const minutes = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / 60000));
+    const minutes = Math.max(
+      1,
+      Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / 60000),
+    );
     return `${minutes} min`;
   }
 
-  if (typeof session.endedAt === "number" && session.endedAt > session.startedAt) {
-    const minutes = Math.max(1, Math.round((session.endedAt - session.startedAt) / 60000));
+  if (
+    typeof session.endedAt === "number" &&
+    session.endedAt > session.startedAt
+  ) {
+    const minutes = Math.max(
+      1,
+      Math.round((session.endedAt - session.startedAt) / 60000),
+    );
     return `${minutes} min`;
   }
 
@@ -171,7 +198,9 @@ function sessionPreview(session: Pick<SessionListItem, "summary">) {
   return "Full conversation transcript available for review.";
 }
 
-function historyDateCopy(session: Pick<SessionListItem, "startedAt" | "endedAt">) {
+function historyDateCopy(
+  session: Pick<SessionListItem, "startedAt" | "endedAt">,
+) {
   if (isSessionLive(session)) {
     return `Started ${formatClock(session.startedAt)}`;
   }
@@ -191,7 +220,11 @@ function choosePreferredSession(sessions: SessionListItem[]) {
   return (
     sessions.find((session) => isSessionLive(session)) ||
     sessions.find((session) => messageCountForSession(session) > 0) ||
-    sessions.find((session) => typeof session.summary === "string" && session.summary.trim().length > 0) ||
+    sessions.find(
+      (session) =>
+        typeof session.summary === "string" &&
+        session.summary.trim().length > 0,
+    ) ||
     sessions[0]
   );
 }
@@ -378,7 +411,9 @@ function renderMessage(message: SessionMessage, index: number) {
   const alertClass = alertKind ? ` is-${alertKind}` : "";
   const content = escapeHtml(message.text || "");
   const timestamp = formatClock(message.timestamp || activeSession?.startedAt);
-  const childInitial = activeSession ? childInitialForSession(activeSession) : "E";
+  const childInitial = activeSession
+    ? childInitialForSession(activeSession)
+    : "E";
 
   if (role === "model") {
     return `
@@ -463,7 +498,9 @@ function renderAlertsView(session: SessionDetails) {
     const endIndex = Math.min(messages.length - 1, alert.messageIndex + 1);
     const relevantMessages = messages
       .slice(startIndex, endIndex + 1)
-      .map((message, relativeIndex) => renderMessage(message, startIndex + relativeIndex))
+      .map((message, relativeIndex) =>
+        renderMessage(message, startIndex + relativeIndex),
+      )
       .join("");
 
     return `
@@ -549,6 +586,12 @@ function renderSessionWorkspace() {
 
   return `
     <div class="session-detail-shell ${loadingSessionId ? "is-loading" : ""}">
+      <button type="button" class="mobile-back-button" data-mobile-back aria-label="Back to chat history">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Back to history</span>
+      </button>
       ${renderSessionSummary(activeSession)}
       ${renderTabs()}
       <section class="conversation-frame">
@@ -568,8 +611,10 @@ function renderActiveSession() {
     return;
   }
 
+  const mobileDetailClass = showMobileDetail ? "mobile-show-detail" : "";
+
   sessionRoot.innerHTML = `
-    <div class="session-layout">
+    <div class="session-layout ${mobileDetailClass}">
       ${renderHistoryPanel()}
       <section class="session-detail-panel">
         ${renderSessionWorkspace()}
@@ -609,7 +654,9 @@ function renderLoadingAssistantBubble() {
 }
 
 function renderClipModal() {
-  const activeAlert = activeAlerts.find((alert) => alert.id === currentClipAlertId);
+  const activeAlert = activeAlerts.find(
+    (alert) => alert.id === currentClipAlertId,
+  );
 
   if (!activeAlert) {
     clipModal.classList.add("hidden");
@@ -695,8 +742,12 @@ function syncAlertOverlayPositions() {
 
     let previousBottom = 0;
     activeAlerts.forEach((alert) => {
-      const alertNode = stage.querySelector<HTMLElement>(`[data-alert-id="${alert.id}"]`);
-      const anchorNode = stage.querySelector<HTMLElement>(`[data-message-index="${alert.messageIndex}"]`);
+      const alertNode = stage.querySelector<HTMLElement>(
+        `[data-alert-id="${alert.id}"]`,
+      );
+      const anchorNode = stage.querySelector<HTMLElement>(
+        `[data-message-index="${alert.messageIndex}"]`,
+      );
       if (!alertNode || !anchorNode) {
         return;
       }
@@ -774,7 +825,9 @@ async function loadLatestSession() {
     loadingSessionId = preferredSession.id;
     renderActiveSession();
 
-    const sessionResponse = await fetch(`/api/sessions/${encodeURIComponent(preferredSession.id)}`);
+    const sessionResponse = await fetch(
+      `/api/sessions/${encodeURIComponent(preferredSession.id)}`,
+    );
     if (!sessionResponse.ok) {
       throw new Error(`Failed to load session ${preferredSession.id}`);
     }
@@ -784,6 +837,9 @@ async function loadLatestSession() {
     activeAlerts = normalizeAlerts(activeSession.alerts);
     activeView = "all";
     loadingSessionId = null;
+    if (window.innerWidth <= 780) {
+      showMobileDetail = true;
+    }
     renderActiveSession();
   } catch (error) {
     console.error("Failed to load latest session:", error);
@@ -797,7 +853,11 @@ async function loadLatestSession() {
 }
 
 async function loadSession(sessionId: string) {
-  if (!sessionId || sessionId === activeSessionId || sessionId === loadingSessionId) {
+  if (
+    !sessionId ||
+    sessionId === activeSessionId ||
+    sessionId === loadingSessionId
+  ) {
     return;
   }
 
@@ -809,7 +869,9 @@ async function loadSession(sessionId: string) {
     renderClipModal();
     renderActiveSession();
 
-    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}`,
+    );
     if (!response.ok) {
       throw new Error(`Failed to load session ${sessionId}`);
     }
@@ -818,6 +880,9 @@ async function loadSession(sessionId: string) {
     activeSessionId = activeSession.id;
     activeAlerts = normalizeAlerts(activeSession.alerts);
     activeView = "all";
+    if (window.innerWidth <= 780) {
+      showMobileDetail = true;
+    }
   } catch (error) {
     console.error("Failed to load selected session:", error);
     sessionLoadError = "Failed to load that chat. Please try again.";
@@ -825,6 +890,11 @@ async function loadSession(sessionId: string) {
     loadingSessionId = null;
     renderActiveSession();
   }
+}
+
+function hideMobileDetailView() {
+  showMobileDetail = false;
+  renderActiveSession();
 }
 
 function updateComposerState() {
@@ -860,7 +930,9 @@ async function sendMessage() {
       throw new Error("No readable stream");
     }
 
-    const loadingBubble = assistantThread.querySelector<HTMLElement>('[data-loading-bubble="true"]');
+    const loadingBubble = assistantThread.querySelector<HTMLElement>(
+      '[data-loading-bubble="true"]',
+    );
     const replyBubble = document.createElement("div");
     replyBubble.className = "assistant-bubble gemini";
     if (loadingBubble) {
@@ -904,7 +976,9 @@ async function sendMessage() {
     renderAssistantDock();
   } catch (error) {
     console.error("Failed to send parent chat message:", error);
-    const loadingBubble = assistantThread.querySelector<HTMLElement>('[data-loading-bubble="true"]');
+    const loadingBubble = assistantThread.querySelector<HTMLElement>(
+      '[data-loading-bubble="true"]',
+    );
     if (loadingBubble) {
       loadingBubble.outerHTML = `<div class="assistant-bubble gemini">Gemini could not answer right now.</div>`;
     }
@@ -942,7 +1016,8 @@ document.addEventListener("click", (event) => {
 
   const viewButton = target.closest<HTMLElement>("[data-view-mode]");
   if (viewButton) {
-    const viewMode = viewButton.dataset.viewMode === "alerts" ? "alerts" : "all";
+    const viewMode =
+      viewButton.dataset.viewMode === "alerts" ? "alerts" : "all";
     setActiveView(viewMode);
     return;
   }
@@ -950,6 +1025,12 @@ document.addEventListener("click", (event) => {
   const historyButton = target.closest<HTMLElement>("[data-session-id]");
   if (historyButton?.dataset.sessionId) {
     void loadSession(historyButton.dataset.sessionId);
+    return;
+  }
+
+  const backButton = target.closest<HTMLElement>("[data-mobile-back]");
+  if (backButton) {
+    hideMobileDetailView();
     return;
   }
 

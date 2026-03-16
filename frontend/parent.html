@@ -41,6 +41,35 @@
                                 <div class="profile-menu-title">Parent</div>
                                 <div class="profile-menu-subtitle">parent@janus.app</div>
                             </div>
+                            <div class="profile-menu-divider"></div>
+                            <button
+                                type="button"
+                                class="profile-menu-item"
+                                role="menuitem"
+                            >
+                                Settings
+                            </button>
+                            <button
+                                type="button"
+                                class="profile-menu-item"
+                                role="menuitem"
+                            >
+                                Privacy
+                            </button>
+                            <button
+                                type="button"
+                                class="profile-menu-item"
+                                role="menuitem"
+                            >
+                                Help
+                            </button>
+                            <button
+                                type="button"
+                                class="profile-menu-item profile-menu-item-danger"
+                                role="menuitem"
+                            >
+                                Sign Out
+                            </button>
                         </div>
                         <div class="profile-menu-divider"></div>
                         <button type="button" class="profile-menu-item" role="menuitem">Settings</button>
@@ -48,67 +77,125 @@
                         <button type="button" class="profile-menu-item" role="menuitem">Help</button>
                     </div>
                 </div>
-            </div>
-        </header>
+            </header>
 
-        <main class="portal-main">
-            <div id="session-root" class="session-root" aria-live="polite">
-                <div class="session-loading">
-                    <div class="loading-spinner"></div>
-                    <p>Loading latest session…</p>
+            <main class="portal-main">
+                <div id="session-root" class="session-root" aria-live="polite">
+                    <div class="session-loading">
+                        <div class="loading-spinner"></div>
+                        <p>Loading latest session…</p>
+                    </div>
                 </div>
-            </div>
-        </main>
+            </main>
 
-        <section id="assistant-dock" class="assistant-dock hidden" aria-label="Session assistant">
-            <div class="assistant-dock-header">
-                <div>
-                    <div class="assistant-dock-title">Session Q&amp;A</div>
-                    <div class="assistant-dock-subtitle">Ask Gemini about this conversation</div>
+            <section
+                id="assistant-dock"
+                class="assistant-dock hidden"
+                aria-label="Session assistant"
+            >
+                <div class="assistant-dock-header">
+                    <div>
+                        <div class="assistant-dock-title">Session Q&amp;A</div>
+                        <div class="assistant-dock-subtitle">
+                            Ask Gemini about this conversation
+                        </div>
+                    </div>
+                    <button
+                        id="assistant-close-button"
+                        type="button"
+                        class="assistant-close-button"
+                        aria-label="Close session Q&A"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M6 6L18 18M18 6L6 18"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </button>
                 </div>
-                <button id="assistant-close-button" type="button" class="assistant-close-button" aria-label="Close session Q&A">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    </svg>
-                </button>
-            </div>
-            <div id="assistant-thread" class="assistant-thread"></div>
-        </section>
+                <div id="assistant-thread" class="assistant-thread"></div>
+            </section>
 
-        <footer class="composer-bar">
-            <div class="composer-shell">
-                <button type="button" class="composer-icon-button" aria-label="Session media">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M4 8.5C4 7.11929 5.11929 6 6.5 6H9L10.5 4.5H13.5L15 6H17.5C18.8807 6 20 7.11929 20 8.5V17.5C20 18.8807 18.8807 20 17.5 20H6.5C5.11929 20 4 18.8807 4 17.5V8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                        <path d="M12 16.5C14.2091 16.5 16 14.7091 16 12.5C16 10.2909 14.2091 8.5 12 8.5C9.79086 8.5 8 10.2909 8 12.5C8 14.7091 9.79086 16.5 12 16.5Z" stroke="currentColor" stroke-width="1.8"/>
-                    </svg>
-                </button>
+            <footer class="composer-bar">
+                <div class="composer-shell">
+                    <button
+                        type="button"
+                        class="composer-icon-button"
+                        aria-label="Session media"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M4 8.5C4 7.11929 5.11929 6 6.5 6H9L10.5 4.5H13.5L15 6H17.5C18.8807 6 20 7.11929 20 8.5V17.5C20 18.8807 18.8807 20 17.5 20H6.5C5.11929 20 4 18.8807 4 17.5V8.5Z"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linejoin="round"
+                            />
+                            <path
+                                d="M12 16.5C14.2091 16.5 16 14.7091 16 12.5C16 10.2909 14.2091 8.5 12 8.5C9.79086 8.5 8 10.2909 8 12.5C8 14.7091 9.79086 16.5 12 16.5Z"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                            />
+                        </svg>
+                    </button>
 
                 <label class="composer-input-wrap" for="chat-input">
                     <span class="sr-only">Ask Gemini about this session</span>
                     <textarea id="chat-input" rows="1" placeholder="Ask Gemini about this session..."></textarea>
                 </label>
 
-                <button type="button" class="composer-icon-button" aria-label="Microphone">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M12 15C13.6569 15 15 13.6569 15 12V7C15 5.34315 13.6569 4 12 4C10.3431 4 9 5.34315 9 7V12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="1.8"/>
-                        <path d="M6 11.5V12C6 15.3137 8.68629 18 12 18C15.3137 18 18 15.3137 18 12V11.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                        <path d="M12 18V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    </svg>
-                </button>
+                    <button
+                        type="button"
+                        class="composer-icon-button"
+                        aria-label="Microphone"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M12 15C13.6569 15 15 13.6569 15 12V7C15 5.34315 13.6569 4 12 4C10.3431 4 9 5.34315 9 7V12C9 13.6569 10.3431 15 12 15Z"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                            />
+                            <path
+                                d="M6 11.5V12C6 15.3137 8.68629 18 12 18C15.3137 18 18 15.3137 18 12V11.5"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                            <path
+                                d="M12 18V20"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </button>
 
-                <button id="send-btn" type="button" class="composer-send-button" disabled aria-label="Send">
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M12 3L13.9081 8.09189L19 10L13.9081 11.9081L12 17L10.0919 11.9081L5 10L10.0919 8.09189L12 3Z" fill="currentColor"/>
-                        <path d="M18 15L18.9 17.1L21 18L18.9 18.9L18 21L17.1 18.9L15 18L17.1 17.1L18 15Z" fill="currentColor"/>
-                    </svg>
-                </button>
-            </div>
-        </footer>
-    </div>
+                    <button
+                        id="send-btn"
+                        type="button"
+                        class="composer-send-button"
+                        disabled
+                        aria-label="Send"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                                d="M12 3L13.9081 8.09189L19 10L13.9081 11.9081L12 17L10.0919 11.9081L5 10L10.0919 8.09189L12 3Z"
+                                fill="currentColor"
+                            />
+                            <path
+                                d="M18 15L18.9 17.1L21 18L18.9 18.9L18 21L17.1 18.9L15 18L17.1 17.1L18 15Z"
+                                fill="currentColor"
+                            />
+                        </svg>
+                    </button>
+                </div>
+            </footer>
+        </div>
 
-    <div id="clip-modal" class="clip-modal hidden" aria-hidden="true"></div>
+        <div id="clip-modal" class="clip-modal hidden" aria-hidden="true"></div>
 
-    <script type="module" src="scripts/parent-chat.ts"></script>
-</body>
+        <script type="module" src="scripts/parent-chat.ts"></script>
+    </body>
 </html>
