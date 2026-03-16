@@ -1226,7 +1226,9 @@ Based on the criteria above, should the companion speak? Output ONLY "true" or "
       return "No prior conversation yet.";
     }
     const recent = this.sessionMessages.slice(-maxMessages);
-    return recent.map((m) => `${m.role}: ${m.text}`).join("\n");
+    return recent
+      .map((m) => `${m.role === "model" ? "janus" : m.role}: ${m.text}`)
+      .join("\n");
   }
 
   private async checkForAtRiskBehavior(userMessage: string): Promise<void> {
