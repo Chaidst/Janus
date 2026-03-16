@@ -239,7 +239,7 @@ export class GeminiInteractionSystem {
   private static readonly VIDEO_SENT_RATE = 1000;
   private static readonly AUDIO_SENT_RATE = 40;
 
-  private static readonly CONTEXT_HISTORY_MS = 3000;
+  private static readonly CONTEXT_HISTORY_MS = 5000;
   private static readonly SILENCE_TIMEOUT_MS = 3000;
   private static readonly POST_SPEECH_QUIET_WINDOW_MS = 1000;
   private static readonly USER_SPEECH_ENERGY_THRESHOLD = 900;
@@ -250,7 +250,7 @@ export class GeminiInteractionSystem {
   private static readonly MAX_AUDIO_HISTORY_SIZE =
     (GeminiInteractionSystem.CONTEXT_HISTORY_MS / 1000) *
     GeminiInteractionSystem.AUDIO_SAMPLE_RATE;
-  private static readonly VIDEO_FPS = 1;
+  private static readonly VIDEO_FPS = 10;
   private static readonly MAX_VIDEO_HISTORY_SIZE =
     (GeminiInteractionSystem.CONTEXT_HISTORY_MS / 1000) *
     GeminiInteractionSystem.VIDEO_FPS;
@@ -1583,11 +1583,11 @@ Does this message indicate at-risk behavior that requires adult intervention? Co
           "-c:v",
           "libx264",
           "-crf",
-          "35",
+          "23",
           "-preset",
-          "veryfast",
-          "-vf",
-          "scale=iw/2:ih/2",
+          "medium",
+          "-b:v",
+          "2M",
           "-pix_fmt",
           "yuv420p",
           "-y", // Overwrite output file
@@ -1788,11 +1788,11 @@ Does this message indicate at-risk behavior that requires adult intervention? Co
           "-c:v",
           "libx264",
           "-crf",
-          "35",
+          "23",
           "-preset",
-          "veryfast",
-          "-vf",
-          "scale=iw/2:ih/2",
+          "medium",
+          "-b:v",
+          "2M",
           "-pix_fmt",
           "yuv420p",
           "-c:a",
