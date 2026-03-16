@@ -1035,11 +1035,12 @@ ${transcript}`,
     this.isAnalyzingContext = true;
     try {
       let resumeReason: string | null = null;
+      const conversationContext = this.buildRecentContext();
 
       const base64Video = await this.getVideoHistoryAsBase64();
       if (base64Video) {
         const response = await this.helper.askTrueFalseQuestion(
-          "Based on this recent video clip, should the companion speak to the child right now? Answer true if the child seems to need engagement, encouragement, or help. Answer false if the child seems happily focused or no response is needed.",
+          `Based on this recent video clip and the conversation history below, should the companion speak to the child right now?\n\nRecent conversation:\n${conversationContext}\n\nAnswer true if: the child seems to need engagement, encouragement, or help, OR if something important was discussed recently that warrants follow-up. Answer false if the child seems happily focused or no response is needed. IMPORTANT: If something significant was discussed in the recent conversation, you should speak now to maintain continuity.`,
           { data: base64Video, mimeType: "video/mp4" },
         );
 
@@ -1064,7 +1065,7 @@ ${transcript}`,
         const base64Audio = await this.getAudioHistoryAsWavBase64();
         if (base64Audio) {
           const response = await this.helper.askTrueFalseQuestion(
-            "Based on this recent audio clip, should the companion speak right now? Answer true if you detect crying, distress, a sudden loud noise that may need attention, or someone speaking to the companion. Answer false if no response is needed.",
+            `Based on this recent audio clip and the conversation history below, should the companion speak right now?\n\nRecent conversation:\n${conversationContext}\n\nAnswer true if: you detect crying, distress, a sudden loud noise, someone speaking to the companion, OR if something important was discussed recently that warrants follow-up. Answer false if no response is needed. IMPORTANT: If something significant was discussed in the recent conversation, you should speak now to maintain continuity.`,
             { data: base64Audio, mimeType: "audio/wav" },
           );
 
