@@ -460,7 +460,21 @@ socket.on("tool-call", (data: { name: string; args: any }) => {
     } else if (args.url) {
       const img = document.createElement("img");
       img.src = args.url;
-      img.alt = args.title;
+      img.alt = args.title || "";
+      // Prevent Google CDN from rejecting requests due to referrer
+      img.referrerPolicy = "no-referrer";
+      img.crossOrigin = "anonymous";
+      // If the image fails to load, show a placeholder gradient
+      img.onerror = () => {
+        img.style.display = "none";
+        const fallback = document.createElement("div");
+        fallback.style.cssText =
+          "width:100%;height:180px;display:flex;align-items:center;justify-content:center;" +
+          "background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:#fff;" +
+          "font-family:'Inter',sans-serif;font-size:42px;";
+        fallback.textContent = "🖼️";
+        popup.insertBefore(fallback, popup.firstChild);
+      };
       popup.appendChild(img);
     }
 
