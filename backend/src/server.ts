@@ -12,11 +12,20 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
+// Health check endpoint for Cloud Run
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy" });
+});
+
 const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
   },
+  // Cloud Run optimized settings: prioritize polling, longer timeouts
+  transports: ["polling", "websocket"],
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 const PORT = process.env.PORT || 3000;
@@ -43,13 +52,8 @@ setupParentChatRoutes(app);
 
 io.on("connection", (socket) => {
   // note the gemini driver seat handles the socket lifetime for a particular user
-  if (process.env.USE_VERTEX) {
-    console.log("Using Vertex AI");
-    new GeminiInteractionSystem(process.env.API_KEY || "", socket, "vertex");
-  } else {
-    console.log("Using AI Studio");
-    new GeminiInteractionSystem(process.env.API_KEY || "", socket);
-  }
+  console.log("Using Vertex AI");
+  new GeminiInteractionSystem("", socket, "vertex");
 
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);

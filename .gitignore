@@ -49,7 +49,6 @@ dump.rdb
 
 # Node (if using npm for frontend tooling)
 node_modules/
-package-lock.json
 
 # Logs
 *.log

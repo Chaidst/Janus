@@ -1,0 +1,11 @@
+#!include:.gitignore
+
+.git/
+.gitignore
+.gcloudignore
+node_modules/
+.env
+.env.local
+service-account.json
+
+!package-lock.json

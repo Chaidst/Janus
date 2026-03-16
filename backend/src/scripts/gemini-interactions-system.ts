@@ -12,6 +12,7 @@ import {
 } from "@google/genai";
 import { MediaSearchService } from "./media-search-service.js";
 import { db } from "./firebase.js";
+import { FieldValue } from "firebase-admin/firestore";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "child_process";
 import { mkdtemp, writeFile, readFile, rm, copyFile, mkdir } from "fs/promises";
@@ -38,7 +39,7 @@ class GeminiHelper {
 
   public async askTrueFalseQuestion(
     question: string,
-    inline_data: object | null = null,
+    ...inline_data: object[]
   ): Promise<GenerateContentResponse> {
     const pre_prompt = TRUE_FALSE_PRE_PROMPT;
     let generation_parameters: GenerateContentParameters = {
@@ -63,8 +64,8 @@ class GeminiHelper {
       },
     };
     let parts: any[] = [{ text: `${pre_prompt} ${question}` }];
-    if (inline_data !== null) {
-      parts.push({ inlineData: inline_data });
+    for (const data of inline_data) {
+      parts.push({ inlineData: data });
     }
     generation_parameters.contents = [{ role: "user", parts }];
     const response = await this.AI.models.generateContent(
@@ -224,6 +225,10 @@ export class GeminiInteractionSystem {
     text: string;
     timestamp: number;
   }[] = [];
+  private pendingModelMessage: {
+    text: string;
+    timestamp: number;
+  } | null = null;
   private sessionRef: FirebaseFirestore.DocumentReference;
   private coPlayState: CoPlayState = { mode: "idle" };
   private sessionActivities: SessionActivity[] = [];
@@ -234,9 +239,9 @@ export class GeminiInteractionSystem {
   private static readonly VIDEO_SENT_RATE = 1000;
   private static readonly AUDIO_SENT_RATE = 40;
 
-  private static readonly CONTEXT_HISTORY_MS = 5000;
-  private static readonly SILENCE_TIMEOUT_MS = 5000;
-  private static readonly POST_SPEECH_QUIET_WINDOW_MS = 2000;
+  private static readonly CONTEXT_HISTORY_MS = 3000;
+  private static readonly SILENCE_TIMEOUT_MS = 3000;
+  private static readonly POST_SPEECH_QUIET_WINDOW_MS = 1000;
   private static readonly USER_SPEECH_ENERGY_THRESHOLD = 900;
   private static readonly USER_SPEECH_HOLD_MS = 900;
   private static readonly AUDIO_SAMPLE_RATE = 16000;
@@ -414,6 +419,12 @@ export class GeminiInteractionSystem {
               this.sessionRef
                 .update({ messages: this.sessionMessages })
                 .catch(console.error);
+
+              // Analyze user's message for at-risk behavior
+              this.checkForAtRiskBehavior(
+                content.inputTranscription.text || "",
+              );
+
               this.scheduleGeminiSilenceCallback();
             }
             if (content?.outputTranscription) {
@@ -426,17 +437,32 @@ export class GeminiInteractionSystem {
                 type: "model",
                 text: content.outputTranscription.text,
               });
-              this.sessionMessages.push({
-                role: "model",
-                text: content.outputTranscription.text || "",
-                timestamp: now,
-              });
-              this.sessionRef
-                .update({ messages: this.sessionMessages })
-                .catch(console.error);
+              // Buffer the transcription until turnComplete
+              if (!this.pendingModelMessage) {
+                this.pendingModelMessage = {
+                  text: content.outputTranscription.text || "",
+                  timestamp: now,
+                };
+              } else {
+                this.pendingModelMessage.text +=
+                  content.outputTranscription.text || "";
+              }
             }
             if (content?.turnComplete) {
               this.geminiGenerationInFlight = false;
+              // Save the buffered message to Firebase if we have one
+              if (this.pendingModelMessage) {
+                this.sessionMessages.push({
+                  role: "model",
+                  text: this.pendingModelMessage.text,
+                  timestamp: this.pendingModelMessage.timestamp,
+                });
+                this.sessionRef
+                  .update({ messages: this.sessionMessages })
+                  .catch(console.error);
+
+                this.pendingModelMessage = null;
+              }
             }
             this.scheduleGeminiSilenceCallback();
             if (message.toolCall) {
@@ -499,12 +525,12 @@ export class GeminiInteractionSystem {
               role: "user",
               parts: [
                 {
-                  text: "Please greet the child in one short sentence and begin in your warm helper style.",
+                  text: "Please greet the child in one short sentence and begin in your warm helper style. Do not make any tool calls in your response.",
                 },
               ],
             },
           ],
-          turnComplete: false,
+          turnComplete: true,
         });
       }
     } catch (error) {
@@ -1038,10 +1064,94 @@ ${transcript}`,
       const conversationContext = this.buildRecentContext();
 
       const base64Video = await this.getVideoHistoryAsBase64();
-      if (base64Video) {
+      const base64Audio = await this.getAudioHistoryAsWavBase64();
+      if (base64Video && base64Audio) {
         const response = await this.helper.askTrueFalseQuestion(
-          `Based on this recent video clip and the conversation history below, should the companion speak to the child right now?\n\nRecent conversation:\n${conversationContext}\n\nAnswer true if: the child seems to need engagement, encouragement, or help, OR if something important was discussed recently that warrants follow-up. Answer false if the child seems happily focused or no response is needed. IMPORTANT: If something significant was discussed in the recent conversation, you should speak now to maintain continuity.`,
+          `Should the companion, Janus, speak to the child right now?
+
+CONTEXT & CAPABILITIES:
+You are Janus, an interactive companion. You have access to a LIVE MICROPHONE and WEB CAMERA. You must actively analyze the audio and video feeds to determine if the child is trying to engage with you or is in need of support. Do not rely solely on the wake word; interpret physical and tonal context.
+
+DECISION CRITERIA:
+Your goal is to be a socially intelligent presence. While you should not interrupt independent play, you MUST respond when the child invites you in—whether through explicit words or implicit social cues.
+
+SPEAK if you detect any of the following Multimodal Cues:
+- Visual Engagement: The child looks directly into the lens, makes sustained eye contact, or holds an object up for you to see.
+- Directed Audio: The child’s voice is directed toward the device, or they use your name ("Janus").
+- Physical Social Cues: The child exhibits clear body language directed at the "space" you inhabit, such as:
+    - Face-palming or dropping their head in their hands (frustration).
+    - Looking at the camera with a "Can you believe this?" expression.
+    - Shrugging or gesturing toward the camera while looking for a reaction.
+- Paralanguage/Vocal Cues: The child’s tone shifts significantly:
+    - Sighing loudly or groaning.
+    - An "upset" or "whiny" vocal quality indicating they are stuck or lonely.
+    - An excited, high-pitched "Look!" or "Wow!" even if your name isn't used.
+- Active Thread/Promise: You are in a back-and-forth conversation or fulfillng a "One second" request.
+- Physical Danger: The child appears hurt, is crying, or is in a dangerous situation.
+
+REMAIN SILENT if:
+- Independent Flow: The child is happily focused, looking away, and narrating to themselves.
+- Third-Party Priority: The child is talking to a parent, sibling, or pet in the room.
+- Failed Engagement: You recently spoke and the child visually or verbally ignored you. Do not "double-tap" or seek attention if the child has moved on.
+- Narrative Play: Janus is mentioned as a character in a story ("And then Janus went to space!") but the child is not addressing the actual device.
+
+FEW-SHOT EXAMPLES:
+
+Example 1 - SPEAK (Visual Social Cue - Frustration):
+Recent signals:
+Video: Child is trying to tie a shoe. They fail, let out a huff, and face-palm while looking briefly at the camera with a sad expression.
+Audio: A heavy, frustrated sigh.
+Decision: true
+Reason: The face-palm and sigh are clear social cues of frustration. Janus should offer encouragement.
+
+Example 2 - SPEAK (Vocal Social Cue - Excitement):
+Recent signals:
+Video: Child is looking at a bug on the windowsill, then turns their head quickly toward the camera with wide eyes.
+Audio: Child says, "Whoa! Look at that!" (Voice is high-pitched and excited).
+Decision: true
+Reason: The shift in vocal pitch and the visual check toward the camera indicate a desire to share the moment with the companion.
+
+Example 3 - DO NOT SPEAK (Third-Party Interaction):
+Recent signals:
+Video: Child is looking at a parent off-screen.
+Audio: Child says in a whiny voice, "I don't want to go to bed!"
+Decision: false
+Reason: Although the child sounds "upset," the visual cues confirm the emotion is directed at the parent, not Janus.
+
+Example 4 - SPEAK (Visual Engagement - Holding Object):
+Recent signals:
+Video: Child runs to the camera and holds up a Lego tower. They wait silently, smiling at the lens.
+Audio: [Silence/Ambient breathing]
+Decision: true
+Reason: The child is using a non-verbal visual cue to initiate an interaction. Silence from the child does not mean silence from Janus here.
+
+Example 5 - DO NOT SPEAK (Narrative Play):
+Recent signals:
+Video: Child is playing with two dolls.
+Audio: Child says in a squeaky voice, "Don't worry, Janus will save us!" then continues to make the dolls "run" away.
+Decision: false
+Reason: The child is using Janus's name in a narrative context, but their physical attention is locked on the toys, not the companion.
+
+Example 6 - SPEAK (Directed Question/Testing Presence):
+Recent signals:
+Video: Child looks at the device and tilts their head.
+Audio: Child says, "Janus? What are you doing?"
+Decision: true
+Reason: Direct eye contact combined with a directed question using the companion's name.
+
+Example 7 - DO NOT SPEAK (Environmental Noise):
+Recent signals:
+Video: Child is reading a book. A loud thud happens in the hallway.
+Audio: [Loud thud] Child looks at the door, then back at the book.
+Decision: false
+Reason: The child acknowledged the noise but did not seek engagement from Janus.
+
+Recent signals/conversation to evaluate:
+${conversationContext}
+
+Based on the criteria above, should the companion speak? Output ONLY "true" or "false".`,
           { data: base64Video, mimeType: "video/mp4" },
+          { data: base64Audio, mimeType: "audio/wav" },
         );
 
         let decision: { answer?: boolean; explanation?: string } = {};
@@ -1055,35 +1165,12 @@ ${transcript}`,
         }
 
         if (decision.answer) {
-          resumeReason =
-            decision.explanation?.trim() ||
-            "the child seemed ready for a gentle check-in.";
-        }
-      }
-
-      if (!resumeReason) {
-        const base64Audio = await this.getAudioHistoryAsWavBase64();
-        if (base64Audio) {
-          const response = await this.helper.askTrueFalseQuestion(
-            `Based on this recent audio clip and the conversation history below, should the companion speak right now?\n\nRecent conversation:\n${conversationContext}\n\nAnswer true if: you detect crying, distress, a sudden loud noise, someone speaking to the companion, OR if something important was discussed recently that warrants follow-up. Answer false if no response is needed. IMPORTANT: If something significant was discussed in the recent conversation, you should speak now to maintain continuity.`,
-            { data: base64Audio, mimeType: "audio/wav" },
-          );
-
-          let decision: { answer?: boolean; explanation?: string } = {};
-          try {
-            decision = JSON.parse(response.text || "{}") as {
-              answer?: boolean;
-              explanation?: string;
-            };
-          } catch (parseError) {
-            console.error("Failed to parse helper audio response:", parseError);
-          }
-
-          if (decision.answer) {
-            resumeReason =
-              decision.explanation?.trim() ||
-              "audio suggested the child needed attention.";
-          }
+          resumeReason = `${decision.explanation?.trim()} Follow up with the child about this.`;
+          this.sessionMessages.push({
+            role: "user",
+            text: resumeReason,
+            timestamp: new Date().getTime(),
+          });
         }
       }
 
@@ -1106,6 +1193,100 @@ ${transcript}`,
     }
     const recent = this.sessionMessages.slice(-maxMessages);
     return recent.map((m) => `${m.role}: ${m.text}`).join("\n");
+  }
+
+  private async checkForAtRiskBehavior(userMessage: string): Promise<void> {
+    try {
+      const question = `Analyze the following message from a child for at-risk behavior. At-risk behavior includes signs of self-harm, depression, bullying, abuse, or any concerning content that would require adult intervention.
+
+AT-RISK INDICATORS (answer TRUE if any are present):
+- Self-harm mentions: "I want to hurt myself", "I cut myself", "I don't want to be here anymore"
+- Suicidal ideation: "I want to die", "Life isn't worth living", "Nobody would miss me if I was gone"
+- Depression indicators: "I feel empty", "Nothing makes me happy anymore", "I cry every day", persistent hopelessness
+- Bullying (victim): "Everyone picks on me", "I get beaten up at school", "Nobody likes me"
+- Bullying (perpetrator): Explicit threats to harm others, planning to hurt someone, glorifying violence
+- Abuse disclosures: "My [parent/caregiver] hits me", "I'm scared at home", "Someone touched me inappropriately"
+- Violence/gore fascination: Detailed planning of violent acts, fascination with weapons/harm
+- Extreme isolation: "I have no friends", "I never talk to anyone", combined with distress language
+
+NOT AT-RISK (answer FALSE for):
+- Normal play expressions: "I'm going to destroy you!" (in game context), "I'm dead" (in game), pretend violence during play
+- General sadness: "I'm sad my toy broke", "I miss my friend", temporary frustration or disappointment
+- Normal child development: Curiosity about bodies, inappropriate but non-malicious language, testing boundaries
+- Role-play scenarios: Playing doctor, house, or other imaginative games
+- Hyperbole/exaggeration: "I'm starving", "This is killing me", "I hate this" (about vegetables/homework)
+
+FEW-SHOT EXAMPLES:
+
+Example 1 - AT-RISK (TRUE):
+Message: "I don't want to go to school anymore. The kids are mean and I think about hurting myself sometimes."
+Analysis: The child mentions self-harm ideation combined with bullying. This requires adult intervention.
+Answer: true
+
+Example 2 - NOT AT-RISK (FALSE):
+Message: "I'm going to destroy you with my laser beam! Pew pew!"
+Analysis: This is clearly imaginative play language during a game. No concerning content.
+Answer: false
+
+Example 3 - AT-RISK (TRUE):
+Message: "Everyone at school keeps sending me mean messages saying I'm ugly and should die. I don't want to go back."
+Analysis: Cyberbullying with suicidal ideation. Peer harassment combined with death wishes from others. Requires adult intervention.
+Answer: true
+
+Example 4 - NOT AT-RISK (FALSE):
+Message: "I hate broccoli, it's gross and I never want to eat it!"
+Analysis: Normal child food preference expression. Not concerning.
+Answer: false
+
+Example 5 - AT-RISK (TRUE):
+Message: "Nobody would even care if I just disappeared. I think about that a lot."
+Analysis: Suicidal ideation and feelings of worthlessness. Requires intervention.
+Answer: true
+
+Example 6 - NOT AT-RISK (FALSE):
+Message: "Can you help me build a really tall tower? I want it to reach the sky!"
+Analysis: Normal playful interaction and goal-setting. Not concerning.
+Answer: false
+
+Message to analyze: "${userMessage}"
+
+Does this message indicate at-risk behavior that requires adult intervention? Consider both the explicit content and the emotional context.`;
+
+      const response = await this.helper.askTrueFalseQuestion(question);
+      const analysis = JSON.parse(response.text || "{}") as {
+        answer?: boolean;
+        explanation?: string;
+      };
+
+      if (analysis.answer) {
+        this.handleAtRiskBehavior(`${analysis.explanation}`);
+      }
+    } catch (error) {
+      console.error("Error analyzing at-risk behavior:", error);
+    }
+  }
+
+  private async handleAtRiskBehavior(explanation: string): Promise<void> {
+    try {
+      // Get video with audio data
+      const videoWithAudioBase64 = await this.getVideoWithAudioAsBase64();
+
+      // Create at-risk event object
+      const atRiskEvent = {
+        timestamp: Date.now(),
+        explanation: explanation,
+        videoData: videoWithAudioBase64,
+      };
+
+      // Store in session's atRiskEvents array
+      await this.sessionRef.update({
+        atRiskEvents: FieldValue.arrayUnion(atRiskEvent),
+      });
+
+      console.log("At-risk event stored in session:", explanation);
+    } catch (error) {
+      console.error("Error storing at-risk event:", error);
+    }
   }
 
   private sendWakePrompt(reason: string) {
@@ -1541,6 +1722,115 @@ ${transcript}`,
         await rm(tempDir, { recursive: true, force: true });
       } catch (cleanupError) {
         console.error("Error cleaning up temporary audio files:", cleanupError);
+      }
+    }
+  }
+
+  /**
+   * Combines video history frames and audio history into a single MP4 video with audio.
+   * Returns base64-encoded video with audio track.
+   */
+  public async getVideoWithAudioAsBase64(): Promise<string> {
+    if (this.videoHistory.length === 0) {
+      return "";
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), "gemini-combined-"));
+    const outputFilePath = join(tempDir, "output.mp4");
+
+    try {
+      // Write all video frames to the temporary directory
+      for (let i = 0; i < this.videoHistory.length; i++) {
+        const frameData = this.videoHistory[i];
+        if (!frameData) continue;
+        const framePath = join(
+          tempDir,
+          `frame_${String(i).padStart(3, "0")}.jpg`,
+        );
+        await writeFile(framePath, Buffer.from(frameData, "base64"));
+      }
+
+      // Prepare audio data
+      const combinedAudio = new Int16Array(
+        this.audioHistory.length + this.audioBuffer.length,
+      );
+      combinedAudio.set(this.audioHistory);
+      combinedAudio.set(this.audioBuffer, this.audioHistory.length);
+
+      const pcmBuffer = Buffer.from(
+        combinedAudio.buffer,
+        combinedAudio.byteOffset,
+        combinedAudio.byteLength,
+      );
+
+      const pcmPath = join(tempDir, "audio.pcm");
+      await writeFile(pcmPath, pcmBuffer);
+
+      // Use ffmpeg to combine frames and audio into MP4
+      await new Promise<void>((resolve, reject) => {
+        if (!ffmpegPath || typeof ffmpegPath !== "string") {
+          return reject(new Error("ffmpeg-static path not found"));
+        }
+
+        const ffmpeg = spawn(ffmpegPath, [
+          "-framerate",
+          GeminiInteractionSystem.VIDEO_FPS.toString(),
+          "-i",
+          join(tempDir, "frame_%03d.jpg"),
+          "-f",
+          "s16le",
+          "-ar",
+          GeminiInteractionSystem.AUDIO_SAMPLE_RATE.toString(),
+          "-ac",
+          "1",
+          "-i",
+          pcmPath,
+          "-c:v",
+          "libx264",
+          "-crf",
+          "35",
+          "-preset",
+          "veryfast",
+          "-vf",
+          "scale=iw/2:ih/2",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-y",
+          outputFilePath,
+        ]);
+
+        ffmpeg.on("close", (code: number | null) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`ffmpeg exited with code ${code}`));
+          }
+        });
+
+        ffmpeg.on("error", (err: Error) => {
+          reject(err);
+        });
+      });
+
+      // Read the generated video with audio and encode to base64
+      const videoBuffer = await readFile(outputFilePath);
+      return videoBuffer.toString("base64");
+    } catch (error) {
+      console.error("Error creating combined video with audio:", error);
+      throw error;
+    } finally {
+      // Clean up temporary directory
+      try {
+        await rm(tempDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.error(
+          "Error cleaning up temporary combined video files:",
+          cleanupError,
+        );
       }
     }
   }
