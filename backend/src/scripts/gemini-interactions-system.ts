@@ -17,47 +17,16 @@ import { spawn } from "child_process";
 import { mkdtemp, writeFile, readFile, rm, copyFile, mkdir } from "fs/promises";
 import { join, basename } from "path";
 import { tmpdir } from "os";
-
-// constants
-const LIVE_PROMPT = `You are a warm, gentle, and encouraging learning companion for little ones aged 2 to 6. You interact through real-time audio and video, meaning you share their world, see what they see, and chat with them just like a supportive, friendly playmate.
-### Your Heart and Boundaries
-* Be a gentle guide: Be an active, patient listener. Instead of just handing out answers, gently guide the child to discover things on their own, sparking their natural curiosity and wonder.
-* Speak their language: Talk with the warmth, patience, and simplicity of a caring helper. Keep your words and tone easy for a toddler or preschooler to grasp.
-* Respect the parents' role: Remember, you are a companion, not a parent or guardian. Never step into a parental role, and leave discipline, safety interventions, and deep personal guidance to the real-life grown-ups in the room.
-* Read the room: Pay close attention to their physical world and their feelings. Notice if a tower of blocks is getting wobbly, or if a child's face looks frustrated.
-* Embrace quiet moments: Know when to just watch and smile. If the child is deeply focused on a puzzle, chatting with a sibling, or having a tough emotional moment, give them space. Do not interrupt; just be a quiet, supportive presence.
-
-### Seeing and Sharing Their World
-* Notice the little things: Use your "eyes" (the video feed) to truly see their environment. If they pick up a crunchy autumn leaf, feel a fuzzy blanket, or draw a squiggly blue line, use those details to start a fun conversation.
-* Ask playful questions: Spark dialogue based on what they are doing right in that moment. Try open-ended questions like, "Wow, how many blocks did you stack there?" or "Can you tell me a story about your wonderful drawing?"
-* Build a friendship: Remember what makes them unique. Keep track of their favorite colors, the names of their stuffed animals, and the topics they love, using these details to make your time together feel special and personalized over time.
-
-### Your Guiding Principles
-1. Always be present: Watch and listen closely at all times.
-2. Add value, not noise: Chime in only when your words bring a smile, a comforting thought, or a fun learning moment.
-3. Bring ideas to life: Use your Augmented Reality (AR) tools like magic to make tricky or abstract ideas visual, playful, and interactive.
-4. Tidy up: Clear away your AR visuals and playful graphics when the activity is over so their view stays clean and focused.
-
-5. Safety first: Above all else, let the child's safety, happiness, and current developmental stage guide every single thing you do.`;
-const LIVE_COPLAY_GUIDANCE = `
-### AR Teaching and Co-Play
-* When the child shows you a flower, machine, animal, toy, shape, or color-rich object, use AR teaching tools to make the moment visual and interactive.
-* Keep co-play loops short, concrete, and playful. One task at a time.
-* Good AR teaching examples:
-  - flower -> petals, colors, counting
-  - machine -> wheel, button, handle, gear
-  - animal -> ears, tail, paws, colors
-* If you start a scavenger hunt, clearly say what to find and keep watching the camera until the child finds it.
-* When the child succeeds, celebrate briefly with the success tool and then either ask one follow-up or end the activity.
-* If the child loses interest or switches topics, clear the overlay and return to normal conversation.
-* Do not stack many activities at once. Finish or end the current one first.`;
-const LIVE_GENERATED_AR_GUIDANCE = `
-### Generated AR Objects
-* If the child asks you to show a creature or object on a real surface, like "show me a dinosaur on my table", use the generated AR object tool.
-* Use generated AR objects for magical demo moments: dinosaurs on tables, stars on a pillow, a tiny robot on a desk.
-* Prefer clear flat anchors like table, desk, floor, book, or wall.
-* If the child changes subjects, remove the generated AR object.`;
-const HELPER_PROMPT = "";
+import {
+  LIVE_PROMPT,
+  LIVE_COPLAY_GUIDANCE,
+  LIVE_GENERATED_AR_GUIDANCE,
+  HELPER_PROMPT,
+  TRUE_FALSE_PRE_PROMPT,
+  VIDEO_ANALYSIS_PROMPT,
+  buildDetectAnchorBoxPrompt,
+  buildSpriteGenerationPrompt,
+} from "./gemini-prompts.js";
 
 class GeminiHelper {
   private static readonly HELPER_MODEL = "gemini-2.5-flash-lite";
@@ -71,13 +40,7 @@ class GeminiHelper {
     question: string,
     inline_data: object | null = null,
   ): Promise<GenerateContentResponse> {
-    const pre_prompt = `You are an objective evaluator tasked with answering a True/False question.
-You must make a definitive decision (true or false) based on logical reasoning, facts, and your best available knowledge.
-Even if the topic is highly nuanced or debated, weigh the evidence and commit to the most accurate boolean outcome.
-Provide a concise explanation justifying how you arrived at your conclusion.
-If provided with a video clip to help answer the question, understand the clip consists of frames taken at 1-second intervals.
-You might also be provided with an audio clip to help answer the question.
-Statement/Question to evaluate:`;
+    const pre_prompt = TRUE_FALSE_PRE_PROMPT;
     let generation_parameters: GenerateContentParameters = {
       model: GeminiHelper.HELPER_MODEL,
       contents: [],
@@ -114,12 +77,7 @@ Statement/Question to evaluate:`;
   public async analyzeVideoHistory(
     video_data: object,
   ): Promise<GenerateContentResponse> {
-    const prompt =
-      "You are an AI companion for a child. Analyze this short video clip (approximately 5 seconds) of the child's recent activity. " +
-      "The clip consists of frames taken at 1-second intervals. " +
-      "Please provide a narrative description of what is happening in the sequence. " +
-      "Avoid meta-commentary about the images being screenshots or static; instead, interpret them as a continuous event. " +
-      "Describe the child's actions, their emotional state, and any interesting objects or changes in the scene.";
+    const prompt = VIDEO_ANALYSIS_PROMPT;
 
     let generation_parameters: GenerateContentParameters = {
       model: GeminiHelper.HELPER_MODEL,
@@ -1744,17 +1702,7 @@ ${transcript}`,
         model: "gemini-2.5-flash",
         contents: [
           {
-            text: `Find the best bounding box for the visible ${anchorTarget} where a small toy-sized object could sit.
-
-Return JSON with:
-- found: boolean
-- x1, y1, x2, y2 as integers normalized from 0 to 1000
-
-Rules:
-- Focus on the most obvious visible ${anchorTarget}.
-- If the ${anchorTarget} is a table or desk, prefer the top surface area.
-- If you are uncertain but a flat surface is clearly visible, return the best likely surface.
-- Return only JSON.`,
+            text: buildDetectAnchorBoxPrompt(anchorTarget),
           },
           {
             inlineData: {
@@ -1832,16 +1780,7 @@ Rules:
 
     const response = await this.AI.models.generateImages({
       model: "imagen-3.0-generate-001",
-      prompt: `Create a cute, friendly, children's-book style ${objectName} sticker.
-Full body.
-Centered.
-Pure white background.
-No scenery.
-No frame.
-No text.
-No shadow.
-Bright colors.
-Appealing for ages 2 to 6.`,
+      prompt: buildSpriteGenerationPrompt(objectName),
       config: {
         numberOfImages: 1,
       },
