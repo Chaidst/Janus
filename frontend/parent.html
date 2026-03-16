@@ -4,72 +4,111 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Janus Parent Portal</title>
-    <!-- Use Google Fonts for the Gemini aesthetic -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@500;600;700&family=Bricolage+Grotesque:wght@500;600;700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./parent.css" />
 </head>
-<body class="parent-portal dark-theme">
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">Janus <span>Parent</span></div>
-                <button id="new-chat-btn" class="new-chat-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<body class="parent-portal">
+    <div class="parent-shell">
+        <header class="portal-header">
+            <div class="brand-lockup">
+                <div class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M24 10.5L33.5 14.4V22.2C33.5 28.2 29.6 33.5 24 35.2C18.4 33.5 14.5 28.2 14.5 22.2V14.4L24 10.5Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
                     </svg>
-                    <span>New Chat</span>
+                </div>
+                <div class="brand-copy">Janus</div>
+            </div>
+
+            <div class="header-actions">
+                <button type="button" class="icon-button notification-button" aria-label="Notifications">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M15 18H9M18 8C18 5.23858 15.3137 3 12 3C8.68629 3 6 5.23858 6 8V12.5C6 13.3184 5.68393 14.1052 5.12132 14.7071L4 15.9075V17H20V15.9075L18.8787 14.7071C18.3161 14.1052 18 13.3184 18 12.5V8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="notification-dot" aria-hidden="true"></span>
                 </button>
-            </div>
-            <div class="recent-sessions-container">
-                <div class="section-title">Child Sessions</div>
-                <div id="sessions-list" class="sessions-list">
-                    <!-- Sessions will be populated here -->
-                    <div class="loading-spinner"></div>
-                </div>
-            </div>
-        </aside>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <header class="top-bar">
-                <h1 id="current-view-title">Chat with Gemini</h1>
-                <div class="user-profile">P</div>
-            </header>
-
-            <div id="chat-container" class="chat-container">
-                <div id="welcome-screen" class="welcome-screen">
-                    <div class="gemini-sparkle-large">✨</div>
-                    <h2>Hello, Parent.</h2>
-                    <p>How can I help you understand your child's recent sessions?</p>
-                </div>
-                
-                <div id="messages-area" class="messages-area">
-                    <!-- Chat bubbles will go here -->
-                </div>
-                
-                <div id="transcript-area" class="transcript-area hidden">
-                    <!-- Session transcript will go here -->
-                </div>
-            </div>
-
-            <div id="input-container" class="input-container">
-                <div class="input-box">
-                    <textarea id="chat-input" placeholder="Ask about your child's conversations..." rows="1"></textarea>
-                    <button id="send-btn" class="send-btn" disabled>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
-                        </svg>
+                <div class="profile-menu-wrap">
+                    <button id="profile-menu-button" type="button" class="profile-button" aria-haspopup="menu" aria-expanded="false">
+                        <span>P</span>
                     </button>
+
+                    <div id="profile-menu" class="profile-menu hidden" role="menu">
+                        <div class="profile-menu-header">
+                            <div class="profile-menu-avatar">P</div>
+                            <div>
+                                <div class="profile-menu-title">Parent</div>
+                                <div class="profile-menu-subtitle">parent@janus.app</div>
+                            </div>
+                        </div>
+                        <div class="profile-menu-divider"></div>
+                        <button type="button" class="profile-menu-item" role="menuitem">Settings</button>
+                        <button type="button" class="profile-menu-item" role="menuitem">Privacy</button>
+                        <button type="button" class="profile-menu-item" role="menuitem">Help</button>
+                    </div>
                 </div>
-                <div class="disclaimer">Gemini can make mistakes. Check important info.</div>
+            </div>
+        </header>
+
+        <main class="portal-main">
+            <div id="session-root" class="session-root" aria-live="polite">
+                <div class="session-loading">
+                    <div class="loading-spinner"></div>
+                    <p>Loading latest session…</p>
+                </div>
             </div>
         </main>
+
+        <section id="assistant-dock" class="assistant-dock hidden" aria-label="Session assistant">
+            <div class="assistant-dock-header">
+                <div>
+                    <div class="assistant-dock-title">Session Q&amp;A</div>
+                    <div class="assistant-dock-subtitle">Ask Gemini about this conversation</div>
+                </div>
+                <button id="assistant-close-button" type="button" class="assistant-close-button" aria-label="Close session Q&A">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="assistant-thread" class="assistant-thread"></div>
+        </section>
+
+        <footer class="composer-bar">
+            <div class="composer-shell">
+                <button type="button" class="composer-icon-button" aria-label="Session media">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M4 8.5C4 7.11929 5.11929 6 6.5 6H9L10.5 4.5H13.5L15 6H17.5C18.8807 6 20 7.11929 20 8.5V17.5C20 18.8807 18.8807 20 17.5 20H6.5C5.11929 20 4 18.8807 4 17.5V8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                        <path d="M12 16.5C14.2091 16.5 16 14.7091 16 12.5C16 10.2909 14.2091 8.5 12 8.5C9.79086 8.5 8 10.2909 8 12.5C8 14.7091 9.79086 16.5 12 16.5Z" stroke="currentColor" stroke-width="1.8"/>
+                    </svg>
+                </button>
+
+                <label class="composer-input-wrap" for="chat-input">
+                    <span class="sr-only">Ask Gemini about this session</span>
+                    <textarea id="chat-input" rows="1" placeholder="Ask Gemini about this session..."></textarea>
+                </label>
+
+                <button type="button" class="composer-icon-button" aria-label="Microphone">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 15C13.6569 15 15 13.6569 15 12V7C15 5.34315 13.6569 4 12 4C10.3431 4 9 5.34315 9 7V12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M6 11.5V12C6 15.3137 8.68629 18 12 18C15.3137 18 18 15.3137 18 12V11.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        <path d="M12 18V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+
+                <button id="send-btn" type="button" class="composer-send-button" disabled aria-label="Send">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 3L13.9081 8.09189L19 10L13.9081 11.9081L12 17L10.0919 11.9081L5 10L10.0919 8.09189L12 3Z" fill="currentColor"/>
+                        <path d="M18 15L18.9 17.1L21 18L18.9 18.9L18 21L17.1 18.9L15 18L17.1 17.1L18 15Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+        </footer>
     </div>
-    
+
+    <div id="clip-modal" class="clip-modal hidden" aria-hidden="true"></div>
+
     <script type="module" src="scripts/parent-chat.ts"></script>
 </body>
 </html>
