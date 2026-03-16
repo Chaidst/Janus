@@ -239,7 +239,7 @@ export class GeminiInteractionSystem {
   private static readonly VIDEO_SENT_RATE = 1000;
   private static readonly AUDIO_SENT_RATE = 40;
 
-  private static readonly CONTEXT_HISTORY_MS = 5000;
+  private static readonly CONTEXT_HISTORY_MS = 10000;
   private static readonly SILENCE_TIMEOUT_MS = 3000;
   private static readonly POST_SPEECH_QUIET_WINDOW_MS = 1000;
   private static readonly USER_SPEECH_ENERGY_THRESHOLD = 900;
