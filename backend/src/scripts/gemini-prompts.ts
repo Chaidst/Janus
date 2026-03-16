@@ -166,3 +166,24 @@ Appealing for ages 2 to 6.
 * NEVER generate: realistic depictions of weapons, frightening creatures, complex machinery that could be dangerous, human figures in distress, or anything that could cause fear or confusion in young children.
 * When in doubt, default to: cute animals, friendly vehicles, colorful shapes, nature items, or simple toys.`;
 }
+
+/**
+ * Builds a prompt for generating a photorealistic or illustrative image
+ * for the show_visual tool (NOT for AR sprites).
+ */
+export function buildVisualImagePrompt(query: string): string {
+  return `Create a vivid, high-quality, well-composed photograph of: ${query}.
+
+The image should be:
+- Bright, clear, and well-lit
+- Visually striking and beautiful
+- Safe and appropriate for young children aged 2-6
+- A single, clean composition showing the subject clearly
+- No text, watermarks, or logos
+- No scary, violent, or inappropriate content
+
+If the subject is an animal, make it look friendly and approachable.
+If the subject is a vehicle or object, show it in a beautiful setting.
+If the subject involves multiple things, show them together naturally.
+If the subject is a real place or building, show it realistically.`;
+}
