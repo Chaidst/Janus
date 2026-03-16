@@ -12,10 +12,14 @@ function createAiClient() {
     const project =
       process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_PROJECT_ID || "";
     const location =
-      process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_LOCATION || "us-central1";
+      process.env.GOOGLE_CLOUD_LOCATION ||
+      process.env.GOOGLE_LOCATION ||
+      "us-central1";
 
     if (!project) {
-      throw new Error("Missing GOOGLE_CLOUD_PROJECT for Vertex AI parent chat.");
+      throw new Error(
+        "Missing GOOGLE_CLOUD_PROJECT for Vertex AI parent chat.",
+      );
     }
 
     return new GoogleGenAI({
@@ -55,7 +59,11 @@ type ParentAlert = {
 };
 
 function getChildDocument() {
-  return db.collection("families").doc("default").collection("children").doc("default");
+  return db
+    .collection("families")
+    .doc("default")
+    .collection("children")
+    .doc("default");
 }
 
 function getSessionsCollection() {
@@ -252,21 +260,31 @@ function shapeSessionForParent(
   includeMessages: boolean,
 ) {
   const startedAt =
-    typeof sessionData.startedAt === "number" ? sessionData.startedAt : Date.now();
+    typeof sessionData.startedAt === "number"
+      ? sessionData.startedAt
+      : Date.now();
   const messages = normalizeMessages(sessionData.messages);
   const alerts = deriveAlertsFromHistory(messages, startedAt);
+  const atRiskEvents = Array.isArray(sessionData.atRiskEvents)
+    ? sessionData.atRiskEvents
+    : [];
+  const totalAlertCount = alerts.length + atRiskEvents.length;
 
   return {
     id: sessionId,
     startedAt,
-    endedAt: typeof sessionData.endedAt === "number" ? sessionData.endedAt : undefined,
+    endedAt:
+      typeof sessionData.endedAt === "number" ? sessionData.endedAt : undefined,
     summary: typeof sessionData.summary === "string" ? sessionData.summary : "",
     messageCount: messages.length,
-    activities: Array.isArray(sessionData.activities) ? sessionData.activities : [],
+    activities: Array.isArray(sessionData.activities)
+      ? sessionData.activities
+      : [],
     coPlayState: sessionData.coPlayState || null,
     childName,
-    alertCount: alerts.length,
+    alertCount: totalAlertCount,
     alerts,
+    atRiskEvents,
     messages: includeMessages ? messages : undefined,
   };
 }

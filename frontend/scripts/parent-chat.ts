@@ -39,6 +39,7 @@ type SessionDetails = {
   messageCount?: number;
   alertCount?: number;
   alerts?: SessionAlert[];
+  atRiskEvents?: AtRiskEvent[];
 };
 type SessionListItem = {
   id: string;
@@ -52,6 +53,11 @@ type SessionListItem = {
 };
 type AlertKind = "distress" | "safety";
 type ViewMode = "all" | "alerts";
+type AtRiskEvent = {
+  timestamp: number;
+  explanation: string;
+  videoData: string;
+};
 type SessionAlert = {
   id: string;
   kind: AlertKind;
@@ -64,6 +70,7 @@ type SessionAlert = {
   clipStatus: string;
   excerpt?: string;
   expanded: boolean;
+  videoData?: string;
 };
 
 let activeSession: SessionDetails | null = null;
@@ -229,15 +236,50 @@ function choosePreferredSession(sessions: SessionListItem[]) {
   );
 }
 
-function normalizeAlerts(alerts: SessionDetails["alerts"]) {
-  if (!Array.isArray(alerts)) {
-    return [];
+function normalizeAlerts(
+  alerts: SessionDetails["alerts"],
+  atRiskEvents?: AtRiskEvent[],
+) {
+  const normalizedAlerts: SessionAlert[] = [];
+
+  // Process existing alerts
+  if (Array.isArray(alerts)) {
+    normalizedAlerts.push(
+      ...alerts.map((alert) => ({
+        ...alert,
+        expanded: true,
+      })),
+    );
   }
 
-  return alerts.map((alert) => ({
-    ...alert,
-    expanded: true,
-  }));
+  // Process atRiskEvents and convert to SessionAlert format
+  if (Array.isArray(atRiskEvents)) {
+    atRiskEvents.forEach((event, index) => {
+      const date = new Date(event.timestamp);
+      const timeLabel = date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      normalizedAlerts.push({
+        id: `at-risk-${event.timestamp}-${index}`,
+        kind: "safety",
+        title: "At-Risk Behavior Detected",
+        label: timeLabel,
+        summary: event.explanation,
+        messageIndex: -1, // Not tied to a specific message
+        timestamp: event.timestamp,
+        clipDuration: "Clip",
+        clipStatus: "Available",
+        excerpt: event.explanation,
+        expanded: true,
+        videoData: event.videoData,
+      });
+    });
+  }
+
+  // Sort by timestamp
+  return normalizedAlerts.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 function getMessageAlertKind(index: number) {
@@ -361,7 +403,6 @@ function renderSessionSummary(session: SessionDetails) {
           <div>
             <div class="session-child-name">
               <span>${escapeHtml(childName)}</span>
-              <span class="session-state-pill ${live ? "is-live" : "is-ended"}">${live ? "Active" : "Ended"}</span>
             </div>
             <div class="session-meta-copy">${formatStartLabel(session.startedAt)} • ${computeDurationLabel(session)}</div>
           </div>
@@ -474,13 +515,16 @@ function renderAlertBanner(alert: SessionAlert, overlay = false) {
 function renderAllMessagesView(session: SessionDetails) {
   const messages = session.messages || [];
 
+  // Only show message-based alerts as overlays, not at-risk events
+  const messageAlerts = activeAlerts.filter((alert) => alert.messageIndex >= 0);
+
   return `
     <div class="conversation-stage" id="conversation-stage">
       <div class="timeline-items">
         ${messages.map((message, index) => renderMessage(message, index)).join("")}
       </div>
       <div class="timeline-overlays" id="timeline-overlays">
-        ${activeAlerts.map((alert) => renderAlertBanner(alert, true)).join("")}
+        ${messageAlerts.map((alert) => renderAlertBanner(alert, true)).join("")}
       </div>
     </div>
   `;
@@ -494,6 +538,16 @@ function renderAlertsView(session: SessionDetails) {
   }
 
   const sections = activeAlerts.map((alert) => {
+    // For at-risk events (messageIndex: -1), don't show message threads
+    if (alert.messageIndex < 0) {
+      return `
+        <section class="alert-thread-section">
+          ${renderAlertBanner(alert)}
+        </section>
+      `;
+    }
+
+    // For message-based alerts, show surrounding messages
     const startIndex = Math.max(0, alert.messageIndex - 1);
     const endIndex = Math.min(messages.length - 1, alert.messageIndex + 1);
     const relevantMessages = messages
@@ -511,7 +565,11 @@ function renderAlertsView(session: SessionDetails) {
     `;
   });
 
-  return `<div class="alerts-feed">${sections.join("")}</div>`;
+  return `
+    <div class="conversation-stage" id="conversation-stage">
+      <div class="alerts-feed">${sections.join("")}</div>
+    </div>
+  `;
 }
 
 function renderHistoryPanel() {
@@ -546,7 +604,6 @@ function renderHistoryPanel() {
                   <div class="session-history-item-copy">
                     <div class="session-history-item-title-row">
                       <span class="session-history-item-title">${escapeHtml(sessionHeadline(session))}</span>
-                      <span class="session-history-status ${live ? "is-live" : "is-ended"}">${live ? "Live" : "Past"}</span>
                     </div>
                     <div class="session-history-item-date">${historyDateCopy(session)}</div>
                   </div>
@@ -685,38 +742,52 @@ function renderClipModal() {
         </div>
 
         <div class="clip-player-shell">
-          <div class="clip-poster is-${activeAlert.kind}">
-            <div class="clip-poster-stage">
-              <div class="clip-figure" aria-hidden="true"></div>
+          ${
+            activeAlert.videoData
+              ? `
+            <video
+              class="clip-video-player"
+              controls
+              autoplay
+              style="width: 100%; max-height: 360px; border-radius: 18px; background: #000;"
+            >
+              <source src="data:video/mp4;base64,${activeAlert.videoData}" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
+          `
+              : `
+            <div class="clip-poster is-${activeAlert.kind}">
+              <div class="clip-poster-stage">
+                <div class="clip-figure" aria-hidden="true"></div>
+              </div>
+              <div class="clip-play-surface">
+                <button type="button" class="clip-play-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">
+                  ${iconPlay()}
+                </button>
+              </div>
+              <div class="clip-status-pill">${escapeHtml(activeAlert.clipStatus)}</div>
+              <div class="clip-duration-pill">${activeAlert.clipDuration}</div>
             </div>
-            <div class="clip-play-surface">
-              <button type="button" class="clip-play-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">
-                ${iconPlay()}
-              </button>
-            </div>
-            <div class="clip-status-pill">${escapeHtml(activeAlert.clipStatus)}</div>
-            <div class="clip-duration-pill">${activeAlert.clipDuration}</div>
-          </div>
+          `
+          }
 
-          <div class="clip-progress-track" style="--clip-progress: ${clipPlaybackActive ? "61%" : "34%"};"></div>
-
-          <div class="clip-timeline-pills">
-            <div class="clip-timeline-pill is-active">0:00</div>
-            <div class="clip-timeline-pill">0:22</div>
-            <div class="clip-timeline-pill">${activeAlert.kind === "safety" ? "0:31" : "0:48"}</div>
-          </div>
-
-          <div class="clip-controls">
-            <div class="clip-controls-left">
-              <button type="button" class="clip-control-button" aria-label="Previous">${iconSkipBack()}</button>
-              <button type="button" class="clip-control-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">${iconPlay()}</button>
-              <button type="button" class="clip-control-button" aria-label="Next">${iconSkipForward()}</button>
+          ${
+            !activeAlert.videoData
+              ? `
+            <div class="clip-controls">
+              <div class="clip-controls-left">
+                <button type="button" class="clip-control-button" aria-label="Previous">${iconSkipBack()}</button>
+                <button type="button" class="clip-control-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">${iconPlay()}</button>
+                <button type="button" class="clip-control-button" aria-label="Next">${iconSkipForward()}</button>
+              </div>
+              <div class="clip-controls-right">
+                <button type="button" class="clip-control-button" aria-label="Volume">${iconVolume()}</button>
+                <button type="button" class="clip-control-button" aria-label="Expand">${iconExpand()}</button>
+              </div>
             </div>
-            <div class="clip-controls-right">
-              <button type="button" class="clip-control-button" aria-label="Volume">${iconVolume()}</button>
-              <button type="button" class="clip-control-button" aria-label="Expand">${iconExpand()}</button>
-            </div>
-          </div>
+          `
+              : ""
+          }
         </div>
       </div>
     </div>
@@ -834,7 +905,14 @@ async function loadLatestSession() {
 
     activeSession = (await sessionResponse.json()) as SessionDetails;
     activeSessionId = activeSession.id;
-    activeAlerts = normalizeAlerts(activeSession.alerts);
+    console.log("Session loaded:", activeSession);
+    console.log("atRiskEvents:", activeSession.atRiskEvents);
+    console.log("alerts:", activeSession.alerts);
+    activeAlerts = normalizeAlerts(
+      activeSession.alerts,
+      activeSession.atRiskEvents,
+    );
+    console.log("Normalized alerts:", activeAlerts);
     activeView = "all";
     loadingSessionId = null;
     if (window.innerWidth <= 780) {
@@ -882,7 +960,13 @@ async function loadSession(sessionId: string) {
 
     activeSession = (await response.json()) as SessionDetails;
     activeSessionId = activeSession.id;
-    activeAlerts = normalizeAlerts(activeSession.alerts);
+    console.log("Session loaded (loadSession):", activeSession);
+    console.log("atRiskEvents (loadSession):", activeSession.atRiskEvents);
+    activeAlerts = normalizeAlerts(
+      activeSession.alerts,
+      activeSession.atRiskEvents,
+    );
+    console.log("Normalized alerts (loadSession):", activeAlerts);
     activeView = "all";
   } catch (error) {
     console.error("Failed to load selected session:", error);
