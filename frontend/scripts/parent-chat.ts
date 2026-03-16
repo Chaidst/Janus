@@ -1,407 +1,799 @@
-const sessionsList = document.getElementById('sessions-list') as HTMLDivElement;
-const messagesArea = document.getElementById('messages-area') as HTMLDivElement;
-const transcriptArea = document.getElementById('transcript-area') as HTMLDivElement;
-const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
-const sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
-const welcomeScreen = document.getElementById('welcome-screen') as HTMLDivElement;
-const currentViewTitle = document.getElementById('current-view-title') as HTMLHeadingElement;
-const newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement;
+const sessionRoot = document.getElementById("session-root") as HTMLDivElement;
+const chatInput = document.getElementById("chat-input") as HTMLTextAreaElement;
+const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+const assistantDock = document.getElementById("assistant-dock") as HTMLDivElement;
+const assistantThread = document.getElementById("assistant-thread") as HTMLDivElement;
+const assistantCloseButton = document.getElementById("assistant-close-button") as HTMLButtonElement;
+const clipModal = document.getElementById("clip-modal") as HTMLDivElement;
+const profileMenuButton = document.getElementById("profile-menu-button") as HTMLButtonElement;
+const profileMenu = document.getElementById("profile-menu") as HTMLDivElement;
 
-type ConversationMessage = { role: string, text: string };
-type SessionMessage = { role: string, text: string };
+type ConversationMessage = { role: "user" | "model"; text: string };
+type SessionMessage = {
+  role: string;
+  text: string;
+  timestamp?: number;
+};
+type SessionActivity = {
+  type: string;
+  title: string;
+  detail: string;
+  timestamp: number;
+};
 type SessionDetails = {
-    id: string;
-    startedAt: number;
-    summary?: string;
-    messages?: SessionMessage[];
+  id: string;
+  startedAt: number;
+  endedAt?: number;
+  summary?: string;
+  messages?: SessionMessage[];
+  activities?: SessionActivity[];
+  childName?: string;
+  messageCount?: number;
+  alertCount?: number;
+  alerts?: SessionAlert[];
+};
+type SessionListItem = {
+  id: string;
+  startedAt: number;
+  endedAt?: number;
+  summary?: string;
+  childName?: string;
+  messageCount?: number;
+  alertCount?: number;
+  messages?: SessionMessage[];
+};
+type AlertKind = "distress" | "safety";
+type ViewMode = "all" | "alerts";
+type SessionAlert = {
+  id: string;
+  kind: AlertKind;
+  title: string;
+  label: string;
+  summary: string;
+  messageIndex: number;
+  timestamp: number;
+  clipDuration: string;
+  clipStatus: string;
+  excerpt?: string;
+  expanded: boolean;
 };
 
+let activeSession: SessionDetails | null = null;
+let activeAlerts: SessionAlert[] = [];
+let activeView: ViewMode = "all";
 let conversationHistory: ConversationMessage[] = [];
-let activeSummaryAudio: HTMLAudioElement | null = null;
-let activeSummaryButton: HTMLButtonElement | null = null;
-let summaryButtonResetTimer: number | null = null;
+let currentClipAlertId: string | null = null;
+let clipPlaybackActive = false;
+let overlaySyncFrame: number | null = null;
 
 function escapeHtml(value: string) {
-    const escapes: Record<string, string> = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-    };
+  const escapes: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
 
-    return value.replace(/[&<>"']/g, character => escapes[character] || character);
+  return value.replace(/[&<>"']/g, (character) => escapes[character] || character);
 }
 
-function clearSummaryResetTimer() {
-    if (summaryButtonResetTimer === null) {
-        return;
-    }
+function childNameForSession(session: SessionDetails) {
+  if (typeof session.childName === "string" && session.childName.trim()) {
+    return session.childName.trim();
+  }
 
-    window.clearTimeout(summaryButtonResetTimer);
-    summaryButtonResetTimer = null;
+  return "Emma";
 }
 
-function renderSummaryAudioButtonContent(state: 'idle' | 'loading' | 'playing' | 'failed') {
-    switch (state) {
-        case 'loading':
-            return '<span class="summary-audio-spinner" aria-hidden="true"></span><span>Loading</span>';
-        case 'playing':
-            return '<span aria-hidden="true">⏹️</span><span>Stop</span>';
-        case 'failed':
-            return '<span aria-hidden="true">❌</span><span>Failed</span>';
-        default:
-            return '<span aria-hidden="true">🔊</span><span>Listen</span>';
-    }
+function childInitialForSession(session: SessionDetails) {
+  return childNameForSession(session).trim().charAt(0).toUpperCase() || "E";
 }
 
-function setSummaryButtonState(button: HTMLButtonElement, state: 'idle' | 'loading' | 'playing' | 'failed') {
-    button.classList.toggle('is-loading', state === 'loading');
-    button.classList.toggle('is-playing', state === 'playing');
-    button.classList.toggle('is-failed', state === 'failed');
-    button.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
-    button.innerHTML = renderSummaryAudioButtonContent(state);
+function formatClock(timestamp?: number) {
+  if (!timestamp) {
+    return "";
+  }
+
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-function resetActiveSummaryButton() {
-    if (!activeSummaryButton) {
-        return;
-    }
-
-    setSummaryButtonState(activeSummaryButton, 'idle');
-    activeSummaryButton = null;
+function formatStartLabel(startedAt: number) {
+  return `Session started ${formatClock(startedAt)}`;
 }
 
-function stopActiveSummaryPlayback() {
-    clearSummaryResetTimer();
+function computeDurationLabel(session: SessionDetails) {
+  const messages = session.messages || [];
+  const timestamps = messages
+    .map((message) => message.timestamp)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 
-    if (activeSummaryAudio) {
-        activeSummaryAudio.pause();
-        activeSummaryAudio.src = '';
-        activeSummaryAudio.load();
-        activeSummaryAudio = null;
-    }
+  if (timestamps.length >= 2) {
+    const minutes = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / 60000));
+    return `${minutes} min`;
+  }
 
-    resetActiveSummaryButton();
+  const fallbackMinutes = Math.max(6, messages.length * 2 - 2);
+  return `${fallbackMinutes} min`;
 }
 
-function failActiveSummaryPlayback() {
-    clearSummaryResetTimer();
+function normalizeAlerts(alerts: SessionDetails["alerts"]) {
+  if (!Array.isArray(alerts)) {
+    return [];
+  }
 
-    if (activeSummaryAudio) {
-        activeSummaryAudio.pause();
-        activeSummaryAudio.src = '';
-        activeSummaryAudio.load();
-        activeSummaryAudio = null;
-    }
-
-    if (!activeSummaryButton) {
-        return;
-    }
-
-    const failedButton = activeSummaryButton;
-    setSummaryButtonState(failedButton, 'failed');
-    activeSummaryButton = null;
-    summaryButtonResetTimer = window.setTimeout(() => {
-        setSummaryButtonState(failedButton, 'idle');
-        summaryButtonResetTimer = null;
-    }, 1500);
+  return alerts.map((alert) => ({
+    ...alert,
+    expanded: true,
+  }));
 }
 
-async function handleSummaryAudio(button: HTMLButtonElement) {
-    const sessionId = button.dataset.sessionAudioId;
-    if (!sessionId) {
-        return;
-    }
-
-    if (activeSummaryButton === button) {
-        stopActiveSummaryPlayback();
-        return;
-    }
-
-    stopActiveSummaryPlayback();
-    setSummaryButtonState(button, 'loading');
-
-    const audio = new Audio(`/api/sessions/${encodeURIComponent(sessionId)}/audio`);
-    audio.preload = 'auto';
-    activeSummaryAudio = audio;
-    activeSummaryButton = button;
-
-    audio.onloadeddata = () => {
-        if (audio !== activeSummaryAudio || button !== activeSummaryButton) {
-            return;
-        }
-
-        setSummaryButtonState(button, 'playing');
-    };
-
-    audio.onended = () => {
-        if (audio !== activeSummaryAudio) {
-            return;
-        }
-
-        stopActiveSummaryPlayback();
-    };
-
-    audio.onerror = () => {
-        if (audio !== activeSummaryAudio) {
-            return;
-        }
-
-        console.error('Failed to load summary audio.');
-        failActiveSummaryPlayback();
-    };
-
-    try {
-        await audio.play();
-    } catch (error) {
-        if (audio === activeSummaryAudio) {
-            console.error('Failed to play summary audio:', error);
-            failActiveSummaryPlayback();
-        }
-    }
+function getMessageAlertKind(index: number) {
+  const alert = activeAlerts.find((entry) => entry.messageIndex === index);
+  return alert?.kind || null;
 }
 
-function renderTranscript(session: SessionDetails) {
-    const date = new Date(session.startedAt).toLocaleString();
-    const summary = session.summary?.trim() || '';
-    const summaryMarkup = summary ? escapeHtml(summary) : 'N/A';
-    const messagesMarkup = session.messages && session.messages.length > 0
-        ? session.messages.map((msg) => {
-            const roleClass = msg.role === 'model' ? 'gemini' : 'child';
-            const roleName = msg.role === 'model' ? 'Gemini' : 'Child';
-            return `
-                <div class="log-entry">
-                    <div class="log-role ${roleClass}">${roleName}:</div>
-                    <div class="log-text">${escapeHtml(msg.text || '')}</div>
-                </div>
-            `;
-        }).join('')
-        : '<p>No messages recorded.</p>';
+function iconMessage() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 17L3 20V7.5C3 6.11929 4.11929 5 5.5 5H18.5C19.8807 5 21 6.11929 21 7.5V14.5C21 15.8807 19.8807 17 18.5 17H7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
+function iconAlert() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4L21 19H3L12 4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M12 9.5V13.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M12 17H12.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function iconClock() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.25" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M12 7.5V12L15.5 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
+function iconSparkle() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3L13.9 8.1L19 10L13.9 11.9L12 17L10.1 11.9L5 10L10.1 8.1L12 3Z" fill="currentColor"/>
+      <path d="M18 15L18.9 17.1L21 18L18.9 18.9L18 21L17.1 18.9L15 18L17.1 17.1L18 15Z" fill="currentColor"/>
+    </svg>
+  `;
+}
+
+function iconPlay() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 6.5L18 12L8 17.5V6.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
+function iconChevronUp() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 14L12 9L17 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  `;
+}
+
+function iconSkipBack() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8.5 12L18 6.5V17.5L8.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M6 6.5V17.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function iconSkipForward() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M15.5 12L6 6.5V17.5L15.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M18 6.5V17.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function iconVolume() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 10H9.5L13.5 6V18L9.5 14H6V10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M16.5 9C17.4298 9.73729 18 10.8327 18 12C18 13.1673 17.4298 14.2627 16.5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function iconExpand() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M14 5H19V10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M19 5L13 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M10 19H5V14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M5 19L11 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function iconDismiss() {
+  return `
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  `;
+}
+
+function renderSessionSummary(session: SessionDetails) {
+  const messages = session.messages || [];
+  const alertsCount = activeAlerts.length;
+  const childName = childNameForSession(session);
+
+  return `
+    <section class="session-summary-card">
+      <div class="session-summary-main">
+        <div class="session-summary-profile">
+          <div class="session-avatar" aria-hidden="true">
+            <span>👧</span>
+            <span class="session-avatar-status"></span>
+          </div>
+
+          <div>
+            <div class="session-child-name">
+              <span>${escapeHtml(childName)}</span>
+              <span class="session-state-pill">Active</span>
+            </div>
+            <div class="session-meta-copy">${formatStartLabel(session.startedAt)} • ${computeDurationLabel(session)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="session-summary-divider"></div>
+
+      <div class="session-stat-row">
+        <div class="session-stat">
+          ${iconMessage()}
+          <span>${messages.length} messages</span>
+        </div>
+        <div class="session-stat-divider" aria-hidden="true"></div>
+        <div class="session-stat is-alert">
+          ${iconAlert()}
+          <span>${alertsCount} alerts</span>
+        </div>
+        <div class="session-stat-divider" aria-hidden="true"></div>
+        <div class="session-stat">
+          ${iconClock()}
+          <span>${computeDurationLabel(session)} session</span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderTabs() {
+  return `
+    <nav class="session-tabs" aria-label="Session views">
+      <button type="button" class="tab-button ${activeView === "all" ? "is-active" : ""}" data-view-mode="all">
+        <span>All Messages</span>
+      </button>
+      <button type="button" class="tab-button is-alert ${activeView === "alerts" ? "is-active" : ""}" data-view-mode="alerts">
+        ${iconAlert()}
+        <span>Alerts</span>
+        <span class="tab-count">${activeAlerts.length}</span>
+      </button>
+    </nav>
+  `;
+}
+
+function renderMessage(message: SessionMessage, index: number) {
+  const role = message.role === "model" ? "model" : "child";
+  const alertKind = getMessageAlertKind(index);
+  const alertClass = alertKind ? ` is-${alertKind}` : "";
+  const content = escapeHtml(message.text || "");
+  const timestamp = formatClock(message.timestamp || activeSession?.startedAt);
+  const childInitial = activeSession ? childInitialForSession(activeSession) : "E";
+
+  if (role === "model") {
+    return `
+      <div class="timeline-row model-row" data-message-index="${index}">
+        <div class="timeline-avatar janus-avatar" aria-hidden="true">
+          ${iconSparkle()}
+        </div>
+        <div class="timeline-content">
+          <div class="message-shell">
+            <div class="message-bubble">${content}</div>
+          </div>
+          <div class="message-meta">${timestamp}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="timeline-row child-row" data-message-index="${index}">
+      <div class="timeline-content">
+        <div class="message-shell">
+          <div class="message-bubble${alertClass}">${content}</div>
+          <div class="timeline-avatar message-avatar" aria-hidden="true">${childInitial}</div>
+        </div>
+        <div class="message-meta">${timestamp}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAlertBanner(alert: SessionAlert, overlay = false) {
+  return `
+    <article class="alert-banner is-${alert.kind} ${overlay ? "is-overlay" : ""} ${alert.expanded ? "is-expanded" : "is-collapsed"}" data-alert-id="${alert.id}">
+      <div class="alert-banner-header">
+        <div class="alert-banner-title-wrap">
+          <div class="alert-banner-icon">${iconAlert()}</div>
+          <div class="alert-banner-copy">
+            <span class="alert-banner-title">${alert.title}</span>
+            <span class="alert-banner-label">${alert.label}</span>
+          </div>
+        </div>
+
+        <div class="alert-banner-actions">
+          <button type="button" class="clip-trigger" data-open-clip="${alert.id}">
+            ${iconPlay()}
+            <span>Clip</span>
+          </button>
+          <button type="button" class="alert-toggle-button" data-toggle-alert="${alert.id}" aria-expanded="${alert.expanded ? "true" : "false"}" aria-label="Toggle alert details">
+            ${iconChevronUp()}
+          </button>
+        </div>
+      </div>
+      <p class="alert-summary">${escapeHtml(alert.summary)}</p>
+    </article>
+  `;
+}
+
+function renderAllMessagesView(session: SessionDetails) {
+  const messages = session.messages || [];
+
+  return `
+    <div class="conversation-stage" id="conversation-stage">
+      <div class="timeline-items">
+        ${messages.map((message, index) => renderMessage(message, index)).join("")}
+      </div>
+      <div class="timeline-overlays" id="timeline-overlays">
+        ${activeAlerts.map((alert) => renderAlertBanner(alert, true)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAlertsView(session: SessionDetails) {
+  const messages = session.messages || [];
+
+  if (activeAlerts.length === 0) {
+    return `<div class="no-alerts-card">No alerts were detected for this session yet.</div>`;
+  }
+
+  const sections = activeAlerts.map((alert) => {
+    const startIndex = Math.max(0, alert.messageIndex - 1);
+    const endIndex = Math.min(messages.length - 1, alert.messageIndex + 1);
+    const relevantMessages = messages
+      .slice(startIndex, endIndex + 1)
+      .map((message, relativeIndex) => renderMessage(message, startIndex + relativeIndex))
+      .join("");
 
     return `
-        <div class="transcript-header">
-            <h2>Session Transcript</h2>
-            <p>Started: ${date}</p>
-            <div class="transcript-summary">
-                <div class="transcript-summary-header">
-                    <strong>Summary</strong>
-                    <button
-                        type="button"
-                        class="summary-audio-btn"
-                        data-session-audio-id="${escapeHtml(session.id)}"
-                        ${summary ? '' : 'disabled'}
-                    >
-                        ${renderSummaryAudioButtonContent('idle')}
-                    </button>
-                </div>
-                <p class="summary-text">${summaryMarkup}</p>
-            </div>
-        </div>
-        <div class="transcript-logs">
-            ${messagesMarkup}
-        </div>
+      <section class="alert-thread-section">
+        ${renderAlertBanner(alert)}
+        <div class="alert-thread-messages">${relevantMessages}</div>
+      </section>
     `;
+  });
+
+  return `<div class="alerts-feed">${sections.join("")}</div>`;
 }
 
-async function loadSessions() {
-    try {
-        const response = await fetch('/api/sessions');
-        const sessions = await response.json();
+function renderActiveSession() {
+  if (!activeSession) {
+    sessionRoot.innerHTML = `
+      <div class="empty-state">
+        <p>No sessions available yet.</p>
+      </div>
+    `;
+    return;
+  }
 
-        sessionsList.innerHTML = '';
-        if (sessions.length === 0) {
-            sessionsList.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No sessions yet.</div>';
-            return;
-        }
+  sessionRoot.innerHTML = `
+    ${renderSessionSummary(activeSession)}
+    ${renderTabs()}
+    <section class="conversation-frame">
+      ${activeView === "all" ? renderAllMessagesView(activeSession) : renderAlertsView(activeSession)}
+    </section>
+  `;
 
-        sessions.forEach((session: any) => {
-            const item = document.createElement('div');
-            item.className = 'session-item';
-            const date = new Date(session.startedAt).toLocaleString();
-            item.innerHTML = `
-                <div class="session-time">${date}</div>
-                <div class="session-preview">${session.summary || 'No summary yet'}</div>
-            `;
-            item.onclick = () => viewSession(session.id, item);
-            sessionsList.appendChild(item);
-        });
-    } catch (error) {
-        console.error("Failed to load sessions:", error);
-        sessionsList.innerHTML = '<div style="color: #ff8a8a; font-size: 13px; padding: 12px;">Failed to load sessions.</div>';
-    }
+  window.requestAnimationFrame(syncAlertOverlayPositions);
 }
 
-async function viewSession(id: string, element: HTMLElement) {
-    stopActiveSummaryPlayback();
-    document.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
-    element.classList.add('selected');
+function renderAssistantDock() {
+  if (conversationHistory.length === 0) {
+    assistantDock.classList.add("hidden");
+    assistantThread.innerHTML = "";
+    return;
+  }
 
-    welcomeScreen.classList.add('hidden');
-    messagesArea.classList.add('hidden');
-    transcriptArea.classList.remove('hidden');
-
-    transcriptArea.innerHTML = '<div class="loading-spinner"></div>';
-    currentViewTitle.textContent = "Session Transcript";
-
-    try {
-        const res = await fetch(`/api/sessions/${id}`);
-        if (!res.ok) {
-            throw new Error(`Failed to load session ${id}`);
-        }
-
-        const session = await res.json() as SessionDetails;
-        transcriptArea.innerHTML = renderTranscript(session);
-
-    } catch (e) {
-        transcriptArea.innerHTML = `<p style="color: #ff8a8a;">Failed to load session details.</p>`;
-    }
+  assistantDock.classList.remove("hidden");
+  assistantThread.innerHTML = conversationHistory
+    .map((message) => {
+      const roleClass = message.role === "user" ? "parent" : "gemini";
+      return `<div class="assistant-bubble ${roleClass}">${escapeHtml(message.text)}</div>`;
+    })
+    .join("");
+  assistantThread.scrollTop = assistantThread.scrollHeight;
 }
 
-function startNewChat() {
-    stopActiveSummaryPlayback();
-    document.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
-    currentViewTitle.textContent = "Chat with Gemini";
-    transcriptArea.classList.add('hidden');
-
-    if (conversationHistory.length === 0) {
-        welcomeScreen.classList.remove('hidden');
-        messagesArea.classList.add('hidden');
-    } else {
-        welcomeScreen.classList.add('hidden');
-        messagesArea.classList.remove('hidden');
-    }
+function renderLoadingAssistantBubble() {
+  assistantDock.classList.remove("hidden");
+  assistantThread.insertAdjacentHTML(
+    "beforeend",
+    `<div class="assistant-bubble gemini is-loading" data-loading-bubble="true"><div class="loading-spinner"></div><span>Gemini is thinking…</span></div>`,
+  );
+  assistantThread.scrollTop = assistantThread.scrollHeight;
 }
 
-if (newChatBtn) newChatBtn.onclick = startNewChat;
+function renderClipModal() {
+  const activeAlert = activeAlerts.find((alert) => alert.id === currentClipAlertId);
 
-// Chat UI sizing
-if (chatInput) {
-    chatInput.addEventListener('input', () => {
-        chatInput.style.height = 'auto';
-        chatInput.style.height = (chatInput.scrollHeight) + 'px';
-        if (sendBtn) sendBtn.disabled = chatInput.value.trim() === '';
-    });
-}
+  if (!activeAlert) {
+    clipModal.classList.add("hidden");
+    clipModal.setAttribute("aria-hidden", "true");
+    clipModal.innerHTML = "";
+    document.body.classList.remove("modal-open");
+    return;
+  }
 
-// Chat submission
-async function sendMessage() {
-    const text = chatInput.value.trim();
-    if (!text) return;
+  const modalTitle = `${activeAlert.title} — ${formatClock(activeAlert.timestamp)}`;
 
-    // Switch to chat view if not already
-    startNewChat();
-    welcomeScreen.classList.add('hidden');
-    messagesArea.classList.remove('hidden');
+  clipModal.classList.remove("hidden");
+  clipModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  clipModal.innerHTML = `
+    <div class="clip-dialog is-${activeAlert.kind}" role="dialog" aria-modal="true" aria-label="${escapeHtml(modalTitle)}">
+      <div class="clip-dialog-inner">
+        <div class="clip-dialog-header">
+          <div class="clip-dialog-title-wrap">
+            ${iconAlert()}
+            <div class="clip-dialog-title">${escapeHtml(modalTitle)}</div>
+          </div>
+          <button type="button" class="clip-dismiss-button" data-close-clip aria-label="Close clip">
+            ${iconDismiss()}
+          </button>
+        </div>
 
-    // Add user message to UI
-    appendMessage('user', text);
-    chatInput.value = '';
-    chatInput.style.height = 'auto';
-    sendBtn.disabled = true;
-
-    // Create placeholder for Gemini response
-    const modelBubble = appendMessage('model', '<div class="loading-spinner" style="margin: 0; width: 16px; height: 16px; border-width: 2px;"></div>');
-    const textElement = modelBubble.querySelector('.model-text') as HTMLDivElement;
-
-    try {
-        const response = await fetch('/api/parent/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message: text,
-                conversationHistory
-            })
-        });
-
-        if (!response.body) throw new Error('No readable stream');
-
-        conversationHistory.push({ role: 'user', text });
-
-        textElement.innerHTML = '';
-        let fullResponse = '';
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                    try {
-                        const data = JSON.parse(line.substring(6));
-                        if (data.text) {
-                            fullResponse += data.text;
-                            // Basic markdown-to-html for linebreaks and bold
-                            let htmlResponse = fullResponse
-                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\n/g, '<br>');
-                            textElement.innerHTML = htmlResponse;
-                            scrollToBottom();
-                        }
-                    } catch (e) { }
-                }
-            }
-        }
-
-        conversationHistory.push({ role: 'model', text: fullResponse });
-
-    } catch (e) {
-        textElement.innerHTML = `<span style="color: #ff8a8a;">Error connecting to Gemini.</span>`;
-    }
-}
-
-function appendMessage(role: string, content: string) {
-    const row = document.createElement('div');
-    row.className = `message-row ${role}-row`;
-
-    if (role === 'user') {
-        row.innerHTML = `<div class="message-bubble">${content}</div>`;
-    } else {
-        row.innerHTML = `
-            <div class="message-bubble">
-                <div class="model-icon">✨</div>
-                <div class="model-text">${content}</div>
+        <div class="clip-player-shell">
+          <div class="clip-poster is-${activeAlert.kind}">
+            <div class="clip-poster-stage">
+              <div class="clip-figure" aria-hidden="true"></div>
             </div>
-        `;
+            <div class="clip-play-surface">
+              <button type="button" class="clip-play-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">
+                ${iconPlay()}
+              </button>
+            </div>
+            <div class="clip-status-pill">${escapeHtml(activeAlert.clipStatus)}</div>
+            <div class="clip-duration-pill">${activeAlert.clipDuration}</div>
+          </div>
+
+          <div class="clip-progress-track" style="--clip-progress: ${clipPlaybackActive ? "61%" : "34%"};"></div>
+
+          <div class="clip-timeline-pills">
+            <div class="clip-timeline-pill is-active">0:00</div>
+            <div class="clip-timeline-pill">0:22</div>
+            <div class="clip-timeline-pill">${activeAlert.kind === "safety" ? "0:31" : "0:48"}</div>
+          </div>
+
+          <div class="clip-controls">
+            <div class="clip-controls-left">
+              <button type="button" class="clip-control-button" aria-label="Previous">${iconSkipBack()}</button>
+              <button type="button" class="clip-control-button" data-toggle-clip-play aria-label="${clipPlaybackActive ? "Pause clip" : "Play clip"}">${iconPlay()}</button>
+              <button type="button" class="clip-control-button" aria-label="Next">${iconSkipForward()}</button>
+            </div>
+            <div class="clip-controls-right">
+              <button type="button" class="clip-control-button" aria-label="Volume">${iconVolume()}</button>
+              <button type="button" class="clip-control-button" aria-label="Expand">${iconExpand()}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function syncAlertOverlayPositions() {
+  if (overlaySyncFrame !== null) {
+    window.cancelAnimationFrame(overlaySyncFrame);
+  }
+
+  overlaySyncFrame = window.requestAnimationFrame(() => {
+    overlaySyncFrame = null;
+
+    if (activeView !== "all") {
+      return;
     }
 
-    messagesArea.appendChild(row);
-    scrollToBottom();
-    return row;
-}
-
-function scrollToBottom() {
-    const chatContainer = document.getElementById('chat-container');
-    if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+    const stage = document.getElementById("conversation-stage");
+    if (!stage) {
+      return;
     }
-}
 
-if (sendBtn) sendBtn.onclick = sendMessage;
-if (chatInput) {
-    chatInput.onkeydown = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
-}
-
-transcriptArea.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement;
-    const button = target.closest<HTMLButtonElement>('.summary-audio-btn');
-    if (!button || button.disabled) {
+    let previousBottom = 0;
+    activeAlerts.forEach((alert) => {
+      const alertNode = stage.querySelector<HTMLElement>(`[data-alert-id="${alert.id}"]`);
+      const anchorNode = stage.querySelector<HTMLElement>(`[data-message-index="${alert.messageIndex}"]`);
+      if (!alertNode || !anchorNode) {
         return;
+      }
+
+      const alertHeight = alertNode.offsetHeight;
+      const desiredTop = Math.max(12, anchorNode.offsetTop - alertHeight - 14);
+      const top = Math.max(desiredTop, previousBottom + 18);
+      alertNode.style.top = `${top}px`;
+      previousBottom = top + alertHeight;
+    });
+  });
+}
+
+function setActiveView(nextView: ViewMode) {
+  if (activeView === nextView) {
+    return;
+  }
+
+  activeView = nextView;
+  renderActiveSession();
+}
+
+function toggleAlertExpansion(alertId: string) {
+  const targetAlert = activeAlerts.find((alert) => alert.id === alertId);
+  if (!targetAlert) {
+    return;
+  }
+
+  targetAlert.expanded = !targetAlert.expanded;
+  renderActiveSession();
+}
+
+function openClip(alertId: string) {
+  currentClipAlertId = alertId;
+  clipPlaybackActive = false;
+  renderClipModal();
+}
+
+function closeClip() {
+  currentClipAlertId = null;
+  clipPlaybackActive = false;
+  renderClipModal();
+}
+
+function toggleClipPlayback() {
+  if (!currentClipAlertId) {
+    return;
+  }
+
+  clipPlaybackActive = !clipPlaybackActive;
+  renderClipModal();
+}
+
+async function loadLatestSession() {
+  try {
+    const response = await fetch("/api/sessions");
+    if (!response.ok) {
+      throw new Error("Failed to load sessions");
     }
 
-    void handleSummaryAudio(button);
+    const sessions = (await response.json()) as SessionListItem[];
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      activeSession = null;
+      activeAlerts = [];
+      renderActiveSession();
+      return;
+    }
+
+    const preferredSession =
+      sessions.find((session) => typeof session.messageCount === "number" && session.messageCount > 0) ||
+      sessions.find((session) => typeof session.summary === "string" && session.summary.trim().length > 0) ||
+      sessions[0];
+
+    const latestSessionId = preferredSession.id;
+    const sessionResponse = await fetch(`/api/sessions/${encodeURIComponent(latestSessionId)}`);
+    if (!sessionResponse.ok) {
+      throw new Error(`Failed to load session ${latestSessionId}`);
+    }
+
+    activeSession = (await sessionResponse.json()) as SessionDetails;
+    activeAlerts = normalizeAlerts(activeSession.alerts);
+    activeView = "all";
+    renderActiveSession();
+  } catch (error) {
+    console.error("Failed to load latest session:", error);
+    sessionRoot.innerHTML = `
+      <div class="empty-state">
+        <p>Failed to load the parent session view.</p>
+      </div>
+    `;
+  }
+}
+
+function updateComposerState() {
+  chatInput.style.height = "auto";
+  chatInput.style.height = `${chatInput.scrollHeight}px`;
+  sendBtn.disabled = chatInput.value.trim() === "";
+}
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text) {
+    return;
+  }
+
+  conversationHistory.push({ role: "user", text });
+  renderAssistantDock();
+  renderLoadingAssistantBubble();
+
+  chatInput.value = "";
+  updateComposerState();
+
+  try {
+    const response = await fetch("/api/parent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        conversationHistory,
+      }),
+    });
+
+    if (!response.body) {
+      throw new Error("No readable stream");
+    }
+
+    const loadingBubble = assistantThread.querySelector<HTMLElement>('[data-loading-bubble="true"]');
+    const replyBubble = document.createElement("div");
+    replyBubble.className = "assistant-bubble gemini";
+    if (loadingBubble) {
+      loadingBubble.replaceWith(replyBubble);
+    } else {
+      assistantThread.appendChild(replyBubble);
+    }
+
+    let fullResponse = "";
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ") || line === "data: [DONE]") {
+          continue;
+        }
+
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (typeof data.text === "string") {
+            fullResponse += data.text;
+            replyBubble.textContent = fullResponse;
+            assistantThread.scrollTop = assistantThread.scrollHeight;
+          }
+        } catch (error) {
+          console.error("Failed to parse parent chat stream chunk:", error);
+        }
+      }
+    }
+
+    conversationHistory.push({ role: "model", text: fullResponse });
+    renderAssistantDock();
+  } catch (error) {
+    console.error("Failed to send parent chat message:", error);
+    const loadingBubble = assistantThread.querySelector<HTMLElement>('[data-loading-bubble="true"]');
+    if (loadingBubble) {
+      loadingBubble.outerHTML = `<div class="assistant-bubble gemini">Gemini could not answer right now.</div>`;
+    }
+  }
+}
+
+chatInput.addEventListener("input", updateComposerState);
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void sendMessage();
+  }
+});
+sendBtn.addEventListener("click", () => {
+  void sendMessage();
 });
 
-// Initial load
-loadSessions();
+assistantCloseButton.addEventListener("click", () => {
+  assistantDock.classList.add("hidden");
+});
+
+profileMenuButton.addEventListener("click", () => {
+  const isOpen = !profileMenu.classList.contains("hidden");
+  profileMenu.classList.toggle("hidden", isOpen);
+  profileMenuButton.setAttribute("aria-expanded", isOpen ? "false" : "true");
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement;
+
+  if (!profileMenu.contains(target) && !profileMenuButton.contains(target)) {
+    profileMenu.classList.add("hidden");
+    profileMenuButton.setAttribute("aria-expanded", "false");
+  }
+
+  const viewButton = target.closest<HTMLElement>("[data-view-mode]");
+  if (viewButton) {
+    const viewMode = viewButton.dataset.viewMode === "alerts" ? "alerts" : "all";
+    setActiveView(viewMode);
+    return;
+  }
+
+  const toggleButton = target.closest<HTMLElement>("[data-toggle-alert]");
+  if (toggleButton?.dataset.toggleAlert) {
+    toggleAlertExpansion(toggleButton.dataset.toggleAlert);
+    return;
+  }
+
+  const clipButton = target.closest<HTMLElement>("[data-open-clip]");
+  if (clipButton?.dataset.openClip) {
+    openClip(clipButton.dataset.openClip);
+    return;
+  }
+
+  if (target.closest("[data-close-clip]")) {
+    closeClip();
+    return;
+  }
+
+  if (target.closest("[data-toggle-clip-play]")) {
+    toggleClipPlayback();
+  }
+});
+
+clipModal.addEventListener("click", (event) => {
+  if (event.target === clipModal) {
+    closeClip();
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    if (!clipModal.classList.contains("hidden")) {
+      closeClip();
+      return;
+    }
+
+    if (!profileMenu.classList.contains("hidden")) {
+      profileMenu.classList.add("hidden");
+      profileMenuButton.setAttribute("aria-expanded", "false");
+    }
+  }
+});
+
+window.addEventListener("resize", () => {
+  syncAlertOverlayPositions();
+});
+
+updateComposerState();
+void loadLatestSession();

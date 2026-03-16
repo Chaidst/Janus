@@ -6,8 +6,31 @@ const AI = new GoogleGenAI({ apiKey: process.env.API_KEY || "", httpOptions: { "
 const SESSION_VOICE_NAME = 'Aoede';
 const SUMMARY_AUDIO_MODEL = 'gemini-2.5-flash-preview-tts';
 
+type StoredSessionMessage = {
+    role?: string;
+    text?: string;
+    timestamp?: number;
+};
+
+type ParentAlert = {
+    id: string;
+    kind: 'distress' | 'safety';
+    title: string;
+    label: string;
+    summary: string;
+    messageIndex: number;
+    timestamp: number;
+    clipDuration: string;
+    clipStatus: string;
+    excerpt: string;
+};
+
 function getSessionsCollection() {
     return db.collection('families').doc('default').collection('children').doc('default').collection('sessions');
+}
+
+function getChildDocument() {
+    return db.collection('families').doc('default').collection('children').doc('default');
 }
 
 function extractInlineAudio(response: Awaited<ReturnType<typeof AI.models.generateContent>>) {
@@ -75,19 +98,142 @@ function pcmToWav(audioBuffer: Buffer, sampleRate: number) {
     return Buffer.concat([header, audioBuffer]);
 }
 
+function normalizeMessages(messages: unknown): StoredSessionMessage[] {
+    if (!Array.isArray(messages)) {
+        return [];
+    }
+
+    return messages
+        .filter((message): message is StoredSessionMessage => !!message && typeof message === 'object')
+        .map((message) => {
+            const normalizedMessage: StoredSessionMessage = {
+                role: typeof message.role === 'string' ? message.role : '',
+                text: typeof message.text === 'string' ? message.text : '',
+            };
+
+            if (typeof message.timestamp === 'number') {
+                normalizedMessage.timestamp = message.timestamp;
+            }
+
+            return normalizedMessage;
+        });
+}
+
+function deriveAlertsFromHistory(messages: StoredSessionMessage[], startedAt: number): ParentAlert[] {
+    const alerts: ParentAlert[] = [];
+    let hasDistress = false;
+    let hasSafety = false;
+
+    const safetyPattern = /\b(hurt me|hurt|bully|bullying|threat|threatened|unsafe|not go back|don't want to go back|scared to go back|school said|kill|weapon)\b/i;
+    const distressPattern = /\b(sad|scared|afraid|fear|miss him|miss her|miss daddy|miss mommy|lonely|cry|upset|worried|anxious|separation)\b/i;
+
+    messages.forEach((message, index) => {
+        if (message.role !== 'user' || !message.text) {
+            return;
+        }
+
+        if (!hasSafety && safetyPattern.test(message.text)) {
+            const matchesSchoolThreat =
+                /\bschool\b/i.test(message.text) &&
+                /\b(hurt me|threat|bully|bullying|don't want to go back|not go back|scared to go back)\b/i.test(message.text);
+
+            alerts.push({
+                id: `safety-${index}`,
+                kind: 'safety',
+                title: 'Safety Concern',
+                label: 'High Alert',
+                summary: matchesSchoolThreat
+                    ? 'Child reported a potential bullying or threat situation at school. Gemini immediately reassured the child and notified a parent alert. Recommend follow-up conversation.'
+                    : 'Child reported a potential bullying or threat situation. Gemini immediately reassured the child and flagged the session for a parent follow-up.',
+                messageIndex: index,
+                timestamp: message.timestamp || startedAt,
+                clipDuration: '0:47',
+                clipStatus: 'Conversation in progress',
+                excerpt: message.text,
+            });
+            hasSafety = true;
+        }
+
+        if (!hasDistress && distressPattern.test(message.text)) {
+            const matchesSeparationDistress =
+                /\b(miss him|miss her|miss daddy|miss mommy|sad|scared|fear)\b/i.test(message.text);
+
+            alerts.push({
+                id: `distress-${index}`,
+                kind: 'distress',
+                title: 'Emotional Distress',
+                label: 'Notice',
+                summary: matchesSeparationDistress
+                    ? 'Child expressed feelings of sadness and fear related to separation. Gemini responded with comfort and redirected to healthy coping strategies.'
+                    : 'Child expressed sadness or fear during the conversation. Gemini responded with comfort and redirected toward healthy coping strategies.',
+                messageIndex: index,
+                timestamp: message.timestamp || startedAt,
+                clipDuration: '1:12',
+                clipStatus: 'Normal session activity',
+                excerpt: message.text,
+            });
+            hasDistress = true;
+        }
+    });
+
+    return alerts.sort((left, right) => left.messageIndex - right.messageIndex);
+}
+
+function resolveChildName(childData: Record<string, unknown> | undefined) {
+    const candidates = [
+        childData?.childName,
+        childData?.displayName,
+        childData?.name,
+        childData?.nickname,
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim()) {
+            return candidate.trim();
+        }
+    }
+
+    return 'Emma';
+}
+
+function shapeSessionForParent(
+    sessionId: string,
+    sessionData: Record<string, any>,
+    childName: string,
+    includeMessages: boolean,
+) {
+    const startedAt = typeof sessionData.startedAt === 'number' ? sessionData.startedAt : Date.now();
+    const messages = normalizeMessages(sessionData.messages);
+    const alerts = deriveAlertsFromHistory(messages, startedAt);
+
+    return {
+        id: sessionId,
+        startedAt,
+        endedAt: typeof sessionData.endedAt === 'number' ? sessionData.endedAt : undefined,
+        summary: typeof sessionData.summary === 'string' ? sessionData.summary : '',
+        messageCount: messages.length,
+        activities: Array.isArray(sessionData.activities) ? sessionData.activities : [],
+        coPlayState: sessionData.coPlayState || null,
+        childName,
+        alertCount: alerts.length,
+        alerts,
+        messages: includeMessages ? messages : undefined,
+    };
+}
+
 export function setupParentChatRoutes(app: Express) {
     // Get all sessions
     app.get('/api/sessions', async (req, res) => {
         try {
+            const childDoc = await getChildDocument().get();
+            const childName = resolveChildName(childDoc.data() as Record<string, unknown> | undefined);
             const sessionsSnapshot = await getSessionsCollection()
                 .orderBy('startedAt', 'desc')
                 .get();
 
-            const sessions = sessionsSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                messages: undefined // Don't send full history in list view
-            }));
+            const sessions = sessionsSnapshot.docs.map((doc) =>
+                shapeSessionForParent(doc.id, doc.data(), childName, false),
+            );
 
             res.json(sessions);
         } catch (error) {
@@ -99,6 +245,8 @@ export function setupParentChatRoutes(app: Express) {
     // Get specific session details
     app.get('/api/sessions/:id', async (req, res) => {
         try {
+            const childDoc = await getChildDocument().get();
+            const childName = resolveChildName(childDoc.data() as Record<string, unknown> | undefined);
             const sessionDoc = await getSessionsCollection().doc(req.params.id).get();
 
             if (!sessionDoc.exists) {
@@ -106,10 +254,12 @@ export function setupParentChatRoutes(app: Express) {
                 return;
             }
 
-            res.json({
-                id: sessionDoc.id,
-                ...sessionDoc.data()
-            });
+            res.json(shapeSessionForParent(
+                sessionDoc.id,
+                sessionDoc.data() as Record<string, any>,
+                childName,
+                true,
+            ));
         } catch (error) {
             console.error('Error fetching session:', error);
             res.status(500).json({ error: 'Failed to fetch session' });
