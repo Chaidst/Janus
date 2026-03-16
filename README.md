@@ -357,6 +357,10 @@ Janus includes a deployment script that prepares a Google Cloud deployment path:
 - builds the container with Cloud Build
 - deploys the service to Cloud Run
 
+> A prerequisite is you need [gcloud cli](https://docs.cloud.google.com/sdk/docs/install-sdk) installed, with your account authenticated via `gcloud auth login`.
+
+> Note: A billing account must be connected for deployment to succeed.
+
 Run:
 
 ```bash
