@@ -310,9 +310,9 @@ This is not just a better interface. It is a different model for how youth inter
 - Node.js
 - npm
 - A Google Cloud project
-- Gemini / Vertex access
-- Firestore configured
-- `service-account.json` for local development
+- Gemini / Vertex access configured in Google Cloud
+- Firestore access configured in Google Cloud
+- `service-account.json` in root for local development (note: we recommend just setting owner in IAM to help speed up the process)
 - Optional `YOUTUBE_API_KEY`
 
 ### Install
