@@ -861,13 +861,17 @@ async function loadSession(sessionId: string) {
     return;
   }
 
+  // Immediately switch to detail view on mobile to avoid flicker
+  if (window.innerWidth <= 780) {
+    showMobileDetail = true;
+  }
+
   try {
     loadingSessionId = sessionId;
     sessionLoadError = null;
     currentClipAlertId = null;
     clipPlaybackActive = false;
     renderClipModal();
-    renderActiveSession();
 
     const response = await fetch(
       `/api/sessions/${encodeURIComponent(sessionId)}`,
@@ -880,9 +884,6 @@ async function loadSession(sessionId: string) {
     activeSessionId = activeSession.id;
     activeAlerts = normalizeAlerts(activeSession.alerts);
     activeView = "all";
-    if (window.innerWidth <= 780) {
-      showMobileDetail = true;
-    }
   } catch (error) {
     console.error("Failed to load selected session:", error);
     sessionLoadError = "Failed to load that chat. Please try again.";
