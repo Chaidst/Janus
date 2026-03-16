@@ -1021,7 +1021,7 @@ ${transcript}`,
     // Send tool responses back to Gemini so it can continue the conversation
     if (responses.length > 0) {
       try {
-        this.session.sendToolResponse({
+        this.session?.sendToolResponse({
           functionResponses: responses,
         });
       } catch (error) {
